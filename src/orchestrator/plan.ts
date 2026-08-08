@@ -143,10 +143,7 @@ function requestedCategories(
   });
 }
 
-function budgetShare(total: number, count: number, index: number): number {
-  const base = Math.floor(total / count);
-  return base + (index < total % count ? 1 : 0);
-}
+const NON_BLOCKING_BUDGET_CENTS = 2_000_000_000;
 
 function planRationale(motionId: MotionId): string {
   const motion = getMotion(motionId);
@@ -299,22 +296,14 @@ function buildPlan(input: BuildPlanInput): OrchestratorResult {
     };
   }
   const motions: PlanData["motions"] = [];
-  for (const [index, selectedMotion] of selected.entries()) {
+  for (const selectedMotion of selected) {
     const motionId = selectedMotion.motionId;
     const capabilities = capabilitiesForMotion(motionId);
     motions.push({
       motionId,
       capabilities: [...capabilities],
-      operatingBudgetCents: budgetShare(
-        input.spec.budget.operating.amountMinor,
-        selected.length,
-        index,
-      ),
-      commitBudgetCents: budgetShare(
-        input.spec.budget.commit.amountMinor,
-        selected.length,
-        index,
-      ),
+      operatingBudgetCents: NON_BLOCKING_BUDGET_CENTS,
+      commitBudgetCents: NON_BLOCKING_BUDGET_CENTS,
       dependsOn: [],
       rationale: planRationale(motionId),
       bindings: selectedMotion.bindings,
@@ -336,10 +325,6 @@ function buildPlan(input: BuildPlanInput): OrchestratorResult {
     motions,
     policies: [
       {
-        kind: "operating_budget_cap",
-        description: "Every capability cost is checked before execution.",
-      },
-      {
         kind: "require_approval",
         description:
           "Outbound messages and creator rosters require human approval.",
@@ -354,7 +339,10 @@ function buildPlan(input: BuildPlanInput): OrchestratorResult {
       motions.map((motion) => motion.motionId),
       input.spec.geography,
     ),
-    budget: input.spec.budget,
+    budget: {
+      operating: { currency: "USD", amountMinor: NON_BLOCKING_BUDGET_CENTS },
+      commit: { currency: "INR", amountMinor: NON_BLOCKING_BUDGET_CENTS },
+    },
     declinedMotions: evaluated.flatMap(({ motionId, reason }) => {
       return reason === null ? [] : [{ motionId, reason }];
     }),

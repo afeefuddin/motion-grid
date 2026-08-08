@@ -17,9 +17,8 @@ export const objectiveCompiler = new Agent({
   model: heavyAgentModel,
   instructions: `Compile the supplied objective into a precise campaign specification.
 Choose only creator, business.local, business.online, consumer.ads, or consumer.email motions.
-When a budget is supplied, preserve its USD operating and INR commitment amounts exactly.
-When no budget is supplied, infer both amounts from the objective's scale, geography, and selected motions.
 Infer a concise campaign name, geography, target criteria, allowed channels, and a measurable success metric from the objective.
+Do not infer, request, or return campaign budgets, spend limits, or monetary allocations.
 Distinguish the company, brand, product, or service being promoted from the audience that could buy it. A named brand in the objective is the seller or offer unless the objective explicitly asks to target that brand or its competitors.
 When the requested clients are organizations, choose business.local for place-based prospects and business.online for non-local companies. These are prospective customers even though the motion name starts with business. Use consumer.ads only to build an advertising audience from connected first-party customer data, and consumer.email only to contact existing opted-in customers. Never use a consumer motion for cold business prospecting.
 For business.local and business.online, set discoveryQuery to a concise category for the prospective customer account (for example, "corporate office" for a restaurant's office-catering offer or "dental clinic" for dental software). Never use the seller's own category, brand name, close substitutes, or competitors as discoveryQuery unless those businesses are explicitly the intended buyers. Do not put qualifying pain, conversion, reachability, geography, or provider-search terms in discoveryQuery; keep those in targetCriteria. Target criteria must describe why the discovered account could need and buy the promoted offer. Omit discoveryQuery when no organization motion is selected.

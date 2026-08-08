@@ -209,8 +209,6 @@ export function createDefaultWorkflowServices(
           .update(campaign)
           .set({
             name: input.name,
-            operatingBudgetCents: input.budget.operating.amountMinor,
-            commitBudgetCents: input.budget.commit.amountMinor,
             updatedAt: new Date(),
           })
           .where(eq(campaign.id, input.campaignId));

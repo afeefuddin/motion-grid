@@ -36,8 +36,8 @@ import {
 } from "./workflows";
 
 const provisionalBudget = {
-  operating: { currency: "USD" as const, amountMinor: 100 },
-  commit: { currency: "INR" as const, amountMinor: 0 },
+  operating: { currency: "USD" as const, amountMinor: 2_000_000_000 },
+  commit: { currency: "INR" as const, amountMinor: 2_000_000_000 },
 };
 
 async function database() {
@@ -83,11 +83,8 @@ export async function createCampaign(
         workspaceId: input.workspaceId,
         name: input.name ?? "Compiling campaign",
         status: "planning",
-        operatingBudgetCents:
-          input.budget?.operating.amountMinor ??
-          provisionalBudget.operating.amountMinor,
-        commitBudgetCents:
-          input.budget?.commit.amountMinor ?? provisionalBudget.commit.amountMinor,
+        operatingBudgetCents: provisionalBudget.operating.amountMinor,
+        commitBudgetCents: provisionalBudget.commit.amountMinor,
       })
       .returning();
     const createdCampaign = CampaignSchema.parse(campaigns[0]);
@@ -140,7 +137,6 @@ export async function createCampaign(
     workspaceName: created.workspaceName,
     connectedSources: created.connectedSources,
     objective: input.objective,
-    ...(input.budget === undefined ? {} : { budget: input.budget }),
   });
   return { campaign: created.campaign, objective: created.objective };
 }

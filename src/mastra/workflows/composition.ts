@@ -69,7 +69,6 @@ export interface CampaignWorkflowServices {
   recordCompiledSpec(input: {
     readonly campaignId: string;
     readonly name: string;
-    readonly budget: z.output<typeof CampaignSpecSchema>["budget"];
     readonly spec: z.output<typeof CampaignSpecSchema>;
   }): Promise<void>;
   businessRuntime(
@@ -342,7 +341,6 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
         await services.recordCompiledSpec({
           campaignId: inputData.campaignId,
           name: spec.name,
-          budget: spec.budget,
           spec,
         });
         await writer.write(

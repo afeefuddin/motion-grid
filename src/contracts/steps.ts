@@ -48,17 +48,6 @@ export const DualBudgetSchema = z.object({
   }),
 });
 
-export const CampaignBudgetSchema = z.object({
-  operating: z.object({
-    currency: z.literal("USD"),
-    amountMinor: NonnegativeCentsSchema.min(100).max(10_000),
-  }),
-  commit: z.object({
-    currency: z.literal("INR"),
-    amountMinor: NonnegativeCentsSchema.max(50_000_000),
-  }),
-});
-
 export const CampaignSpecSchema = z.object({
   name: z.string().min(1),
   goal: z.string().min(1),
@@ -66,7 +55,6 @@ export const CampaignSpecSchema = z.object({
   motions: z.array(MotionIdSchema).min(1),
   targetCriteria: z.array(z.string().min(1)).min(1),
   discoveryQuery: z.string().trim().min(1).optional(),
-  budget: CampaignBudgetSchema,
   channels: z.array(ChannelSchema),
   successMetric: z.string().min(1),
 });
@@ -75,7 +63,6 @@ export const CompileObjectiveInputSchema = z.object({
   workspaceId: IdSchema,
   campaignId: IdSchema,
   objective: z.string().min(1),
-  budget: DualBudgetSchema.optional(),
 });
 export const CompileObjectiveOutputSchema = StepResult(CampaignSpecSchema);
 

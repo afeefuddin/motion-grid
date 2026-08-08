@@ -28,7 +28,6 @@ import {
   AdapterChoiceSchema,
   CapabilityRankingSchema,
   DeclinedMotionSchema,
-  DualBudgetSchema,
   PlanDataSchema,
   ReplanReferenceSchema,
 } from "./steps";
@@ -44,7 +43,6 @@ export const CreateCampaignRequestSchema = z.object({
   workspaceId: IdSchema,
   name: z.string().min(1).optional(),
   objective: z.string().min(1),
-  budget: DualBudgetSchema.optional(),
 });
 export const CreateCampaignResponseSchema = z.object({
   campaign: CampaignSchema,
