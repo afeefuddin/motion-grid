@@ -17,7 +17,7 @@ import {
   WebFetchUnitCostSchema,
 } from "../../contracts/capabilities";
 import { organizationTarget } from "../sim/shared";
-import { generateWorldWithOpenAI } from "./model";
+import { generateWorldWithClaude } from "./model";
 import { GeneratedMarketStore } from "./store";
 
 const profile: AdapterProfile = {
@@ -48,7 +48,7 @@ function sourceRef(kind: string, externalRef: string): string {
 
 /** Creates all generated-market capability adapters over one shared cache. */
 export function createGeneratedMarketAdapters(
-  store = new GeneratedMarketStore({ generateWorld: generateWorldWithOpenAI }),
+  store = new GeneratedMarketStore({ generateWorld: generateWorldWithClaude }),
 ) {
   const geo: Adapter<"geo.query"> = {
     id: "generated.market.geo",

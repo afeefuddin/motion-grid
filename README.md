@@ -48,13 +48,13 @@ pnpm dev
 The web app runs on `http://localhost:3000`.
 
 `DATABASE_URL` must be available to both processes. Mastra also needs `ANTHROPIC_API_KEY` for
-the campaign agents. `OPENAI_API_KEY` is required only when a generated-market request misses its
-cache; fixture-backed and warm-cache runs do not use it. Set `MASTRA_API_URL` in
+the campaign agents and generated-market cache misses; fixture-backed and warm-cache runs do not
+use it for market generation. Set `MASTRA_API_URL` in
 `apps/web/.env.local` only when Mastra is not at `http://localhost:4111`.
 
 The production Mastra workflow requires GitHub `DATABASE_URL` and `ANTHROPIC_API_KEY` secrets,
-applies the committed Drizzle migrations before deployment, and passes an optional
-`OPENAI_API_KEY` only for generated-market cache misses. Resend and WhatsApp credentials belong
+applies the committed Drizzle migrations before deployment, and uses Claude for generated-market
+cache misses. Resend and WhatsApp credentials belong
 to the separate Next.js deployment, not the Mastra runtime.
 
 ## Runtime ownership

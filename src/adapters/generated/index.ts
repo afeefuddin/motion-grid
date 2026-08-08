@@ -6,7 +6,7 @@ export {
   generatedMarketReviewsAdapter,
   generatedMarketWebAdapter,
 } from "./adapters";
-export { generateWorldWithOpenAI } from "./model";
+export { generateWorldWithClaude } from "./model";
 export {
   defaultCacheDirectory,
   GeneratedMarketStore,

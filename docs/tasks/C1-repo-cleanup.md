@@ -110,7 +110,7 @@ interfaces, **stop** — something was written against them since this brief was
 
 ## 3. Delete `apps/agent-runtime`
 
-It is pre-T0: it depends on `@ai-sdk/openai`, `@mastra/libsql`, `@motiongrid/domain` and
+It is pre-T0: it depends on `@ai-sdk/anthropic`, `@mastra/libsql`, `@motiongrid/domain` and
 `@motiongrid/policy`, none of which survive. Its `authorize-action` tool calls the *deleted*
 policy engine. `src/mastra/**` (T0 stub → T4/T6) replaces it entirely.
 

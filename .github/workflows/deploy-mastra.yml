@@ -50,8 +50,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_GENERATED_MARKET_MODEL: ${{ vars.OPENAI_GENERATED_MARKET_MODEL }}
+          ANTHROPIC_GENERATED_MARKET_MODEL: ${{ vars.ANTHROPIC_GENERATED_MARKET_MODEL }}
           MASTRA_API_TOKEN: ${{ secrets.MASTRA_API_TOKEN }}
           MASTRA_ORG_ID: ${{ vars.MASTRA_ORG_ID }}
           MASTRA_PROJECT_ID: ${{ vars.MASTRA_PROJECT_ID }}
@@ -61,11 +60,8 @@ jobs:
           {
             printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
             printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
-            if [ -n "$OPENAI_API_KEY" ]; then
-              printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
-            fi
-            if [ -n "$OPENAI_GENERATED_MARKET_MODEL" ]; then
-              printf 'OPENAI_GENERATED_MARKET_MODEL=%s\n' "$OPENAI_GENERATED_MARKET_MODEL"
+            if [ -n "$ANTHROPIC_GENERATED_MARKET_MODEL" ]; then
+              printf 'ANTHROPIC_GENERATED_MARKET_MODEL=%s\n' "$ANTHROPIC_GENERATED_MARKET_MODEL"
             fi
           } > "$RUNNER_TEMP/mastra-production.env"
           pnpm run deploy:mastra -- --yes --env-file "$RUNNER_TEMP/mastra-production.env"
