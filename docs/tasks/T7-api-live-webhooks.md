@@ -170,5 +170,50 @@ This is demo beat 7. It must work without a page refresh.
 
 ## Handoff note
 
-_(fill in — especially the tunnel URL setup, Twilio join phrase, what changed in the inherited
-routes, and anything T9 needs about the SSE connection)_
+Completed in code on 2026-08-08.
+
+- Added the frozen-contract campaign API surface: create/list/detail, campaign approval and run
+  start. The route layer only parses request contracts, delegates, and maps errors. The Mastra
+  bridge targets `campaignWorkflow`, uses the persisted UUID as its run ID, resumes with
+  `{ approved, decidedBy }`, and forwards any exact `SseEventSchema` value emitted in a workflow
+  stream chunk's `payload` immediately. T6 was not present in this worktree, so this bridge is the
+  explicit integration contract: workflow chunks that drive the UI must put the complete frozen
+  SSE event envelope in `payload`.
+- Added `/api/stream/:runId` with exact schema validation, in-process ordered replay (up to 500
+  events), `Last-Event-ID` continuation, 15-second heartbeats, `Cache-Control: no-store`,
+  `Connection: keep-alive`, and proxy buffering disabled. T9 should open one `EventSource` per run
+  and apply events as they arrive; reconnects replay events after the browser's last event ID.
+- `TwilioWhatsAppAdapter` and `ResendEmailAdapter` now implement
+  `Adapter<"message.send">`, declare live cost/profile metadata, and return the frozen provider
+  reference/status/timestamp output. WhatsApp rejects subjects and uses short body-only messages;
+  email requires a subject and sends plain text. The caught Twilio error cast and Resend non-null
+  assertion are gone.
+- The throw/return boundary is deliberate: policy decisions are values. A deny or
+  `require_approval` is persisted in the approval row and returned without invoking the adapter.
+  Provider/network failures remain typed throws (`TwilioWhatsAppError` or `ResendEmailError`)
+  because the frozen `message.send` output has no error variant; the API catch maps them and T6's
+  per-target catch can turn them into its step-result error value.
+- `/api/messages/:id/approve` loads the persisted draft/contact/campaign, evaluates approval,
+  suppression, operating-budget, and per-run channel rate-limit policies, enforces the inherited
+  environment allowlists, then calls `executeCapability` with a persisted tool-call writer. Only
+  an allowed decision can reach Twilio or Resend. The two old direct-send routes were removed
+  because they had no campaign/run/target context and therefore could not pass the policy or
+  ledger contracts without becoming a bypass.
+- Added verified `/api/webhooks/twilio`, kept the legacy `/twilio/whatsapp` URL as an alias, and
+  made the Twilio status callback persist delivered/failed state. A verified inbound reply is
+  matched to its contact, classified by `replyClassifier`, persisted as an interaction, and emits
+  `interaction.received` plus `target.state`; replies move the grid to `engaged` and opt-outs add a
+  campaign suppression. `/api/webhooks/resend` verifies Svix headers using
+  `RESEND_WEBHOOK_SECRET`, persists delivery/open interactions, and emits the same frozen event
+  envelope.
+- No tunnel was started and no real delivery was claimed: this worktree has blank provider
+  credentials, no configured demo-phone join phrase, no `DATABASE_URL`, and Docker Desktop was
+  not running. Before rehearsal, start the app and
+  `cloudflared tunnel --url http://localhost:3000`, set `PUBLIC_WEBHOOK_URL` to that HTTPS origin,
+  configure Twilio inbound at `/api/webhooks/twilio` and status at
+  `/api/webhooks/twilio/status`, configure Resend at `/api/webhooks/resend`, and pre-join the demo
+  phone using the phrase shown by the Twilio sandbox console.
+- Verification completed: `pnpm typecheck`, focused Biome checks, `pnpm test` (28 passing; the DB
+  suite skipped because `DATABASE_URL` is unset), `pnpm build`, `git diff --check`, and the
+  zero-cast/zero-`any`/zero-optional-chaining grep all pass. The three real-provider acceptance
+  checks remain environmental and must be run during rehearsal with credentials.

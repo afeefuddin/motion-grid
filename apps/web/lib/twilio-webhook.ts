@@ -1,4 +1,11 @@
 import { validateTwilioWebhook } from "../../../src/adapters/live";
+import { z } from "zod";
+
+export const TwilioStatusWebhookSchema = z.object({
+  MessageSid: z.string().min(1),
+  MessageStatus: z.string().min(1),
+  ErrorCode: z.string().optional(),
+});
 
 function externallyVisibleUrl(requestUrl: string) {
   const incomingUrl = new URL(requestUrl);
