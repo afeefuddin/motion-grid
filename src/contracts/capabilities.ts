@@ -180,7 +180,7 @@ export const AdsPlanOutputSchema = z.object({
   assumptions: z.array(z.string().min(1)),
 });
 export const AdsPlanUnitCostSchema = UnitCostSchema.extend({
-  unit: z.literal("impression"),
+  unit: z.literal("request"),
 });
 
 export const capabilityContracts = {

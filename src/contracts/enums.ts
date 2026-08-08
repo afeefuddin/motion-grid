@@ -93,7 +93,7 @@ export const policyDecisions = defineValues(
 );
 export const PolicyDecisionSchema = z.enum(policyDecisions);
 
-export const adapterModes = defineValues("sim", "live", "plan");
+export const adapterModes = defineValues("sim", "generated", "live", "plan");
 export const AdapterModeSchema = z.enum(adapterModes);
 
 export const approvalStatuses = defineValues("pending", "approved", "rejected");

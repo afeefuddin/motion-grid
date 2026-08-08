@@ -9,12 +9,26 @@ import type {
 
 export type AdapterMode = z.output<typeof AdapterModeSchema>;
 
-/** Adapter contract implemented by simulation, live, and planning providers. */
+/** Comparable metadata used to rank adapters for an objective. */
+export interface AdapterProfile {
+  readonly coverage: {
+    readonly geographies: readonly string[];
+    readonly categories: readonly string[];
+  };
+  readonly freshnessDays: number;
+  readonly expectedConfidence: number;
+  readonly rateLimitPerMinute: number | null;
+  readonly writesExternalState: boolean;
+  readonly productionPath: string;
+}
+
+/** Adapter contract implemented by simulation, generated, live, and planning providers. */
 export interface Adapter<C extends CapabilityId = CapabilityId> {
   readonly id: string;
   readonly provides: readonly C[];
   readonly mode: AdapterMode;
   readonly unitCost: CapabilityUnitCost<C>;
+  readonly profile: AdapterProfile;
   execute(
     capabilityId: C,
     input: CapabilityInput<C>,

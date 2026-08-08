@@ -7,6 +7,7 @@ import {
 } from "./capabilities";
 import { IdSchema, SignalSchema } from "./entities";
 import {
+  AdapterModeSchema,
   CapabilityIdSchema,
   ChannelSchema,
   defineValues,
@@ -64,6 +65,65 @@ export const CompileObjectiveInputSchema = z.object({
 });
 export const CompileObjectiveOutputSchema = StepResult(CampaignSpecSchema);
 
+export const RankingWeightsSchema = z
+  .object({
+    cost: ConfidenceSchema,
+    freshness: ConfidenceSchema,
+    confidence: ConfidenceSchema,
+    coverage: ConfidenceSchema,
+  })
+  .refine(
+    ({ cost, freshness, confidence, coverage }) =>
+      Math.abs(cost + freshness + confidence + coverage - 1) < 1e-9,
+    { message: "Ranking weights must sum to 1." },
+  );
+
+export const AdapterCandidateSchema = z.object({
+  adapterId: z.string().min(1),
+  mode: AdapterModeSchema,
+  dimensionScores: z.object({
+    cost: ConfidenceSchema,
+    freshness: ConfidenceSchema,
+    confidence: ConfidenceSchema,
+    coverage: ConfidenceSchema,
+  }),
+  totalScore: ConfidenceSchema,
+  eligible: z.boolean(),
+  reason: z.string().min(1),
+});
+
+export const CapabilityRankingSchema = z.object({
+  capabilityId: CapabilityIdSchema,
+  weights: RankingWeightsSchema,
+  weightsRationale: z.string().min(1),
+  candidates: z.array(AdapterCandidateSchema).min(1),
+});
+
+export const AdapterChoiceSchema = z.object({
+  adapterId: z.string().min(1),
+  mode: AdapterModeSchema,
+});
+
+export const RankedBindingSchema = CapabilityRankingSchema.extend({
+  chosen: AdapterChoiceSchema,
+});
+
+export const DeclinedCapabilitySchema = z.object({
+  capabilityId: CapabilityIdSchema,
+  reason: z.string().min(1),
+});
+
+export const DeclinedMotionSchema = z.object({
+  motionId: MotionIdSchema,
+  reason: z.string().min(1),
+});
+
+export const ReplanReferenceSchema = z.object({
+  planId: IdSchema,
+  trigger: z.string().min(1),
+  reason: z.string().min(1),
+});
+
 export const MotionPlanSchema = z.object({
   motionId: MotionIdSchema,
   capabilities: z.array(CapabilityIdSchema),
@@ -71,6 +131,8 @@ export const MotionPlanSchema = z.object({
   commitBudgetCents: NonnegativeCentsSchema,
   dependsOn: z.array(MotionIdSchema),
   rationale: z.string().min(1),
+  bindings: z.array(RankedBindingSchema).default([]),
+  declined: z.array(DeclinedCapabilitySchema).default([]),
 });
 export const PolicyRequirementSchema = z.object({
   kind: z.string().min(1),
@@ -81,6 +143,8 @@ export const PlanDataSchema = z.object({
   motions: z.array(MotionPlanSchema).min(1),
   policies: z.array(PolicyRequirementSchema),
   budget: DualBudgetSchema,
+  declinedMotions: z.array(DeclinedMotionSchema).default([]),
+  replanOf: ReplanReferenceSchema.nullable().default(null),
 });
 export const PlanInputSchema = z.object({
   campaignId: IdSchema,

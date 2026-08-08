@@ -1,5 +1,6 @@
 import { z } from "zod";
-import * as contracts from "./index";
+
+const contracts: typeof import("./index") = require("./index");
 
 const id = "00000000-0000-4000-8000-000000000001";
 const id2 = "00000000-0000-4000-8000-000000000002";
@@ -228,6 +229,42 @@ const campaignSpec = {
   budget,
   channels: ["whatsapp"],
   successMetric: "meetings_booked",
+};
+const rankingWeights = {
+  cost: 0.25,
+  freshness: 0.25,
+  confidence: 0.25,
+  coverage: 0.25,
+};
+const adapterCandidate = {
+  adapterId: "market.geo",
+  mode: "sim",
+  dimensionScores: {
+    cost: 1,
+    freshness: 1,
+    confidence: 0.95,
+    coverage: 1,
+  },
+  totalScore: 0.9875,
+  eligible: true,
+  reason: "Highest eligible score.",
+};
+const capabilityRanking = {
+  capabilityId: "geo.query",
+  weights: rankingWeights,
+  weightsRationale: "Balanced for a local discovery campaign.",
+  candidates: [adapterCandidate],
+};
+const adapterChoice = { adapterId: "market.geo", mode: "sim" };
+const rankedBinding = { ...capabilityRanking, chosen: adapterChoice };
+const declinedMotion = {
+  motionId: "consumer.ads",
+  reason: "No first-party customer data source is connected.",
+};
+const replanReference = {
+  planId: id,
+  trigger: "operating_budget_cap",
+  reason: "The operating budget was reduced during the run.",
 };
 const motionPlan = {
   motionId: "business.local",
@@ -458,7 +495,7 @@ add(contracts.AdsPlanOutputSchema, {
   assumptions: ["stable CPM"],
 });
 add(contracts.AdsPlanUnitCostSchema, {
-  unit: "impression",
+  unit: "request",
   operatingCents: 0,
   commitCents: 1,
   projected: true,
@@ -474,6 +511,17 @@ add(contracts.CompileObjectiveInputSchema, {
   budget,
 });
 add(contracts.CompileObjectiveOutputSchema, { ok: true, data: campaignSpec });
+add(contracts.RankingWeightsSchema, rankingWeights);
+add(contracts.AdapterCandidateSchema, adapterCandidate);
+add(contracts.CapabilityRankingSchema, capabilityRanking);
+add(contracts.AdapterChoiceSchema, adapterChoice);
+add(contracts.RankedBindingSchema, rankedBinding);
+add(contracts.DeclinedCapabilitySchema, {
+  capabilityId: "people.find",
+  reason: "Contact lookup is deferred until a target qualifies.",
+});
+add(contracts.DeclinedMotionSchema, declinedMotion);
+add(contracts.ReplanReferenceSchema, replanReference);
 add(contracts.MotionPlanSchema, motionPlan);
 add(contracts.PolicyRequirementSchema, {
   kind: "approval",
@@ -741,6 +789,46 @@ const targetState = {
   type: "target.state",
   data: { targetId: id, from: "discovered", to: "observed", reason: null },
 };
+const motionSelected = {
+  ...eventBase,
+  type: "motion_selected",
+  data: {
+    motionId: "business.local",
+    rationale: "The objective requires local business discovery.",
+  },
+};
+const motionDeclined = {
+  ...eventBase,
+  type: "motion_declined",
+  data: declinedMotion,
+};
+const capabilityRanked = {
+  ...eventBase,
+  type: "capability_ranked",
+  data: capabilityRanking,
+};
+const bindingChosen = {
+  ...eventBase,
+  type: "binding_chosen",
+  data: { capabilityId: "geo.query", chosen: adapterChoice },
+};
+const policyWarning = {
+  ...eventBase,
+  type: "policy_warning",
+  data: {
+    warning: {
+      kind: "budget_threshold",
+      utilizationBasisPoints: 8_000,
+    },
+    reason:
+      "Operating budget has reached at least 80%; continue with a budget warning.",
+  },
+};
+const replanStarted = {
+  ...eventBase,
+  type: "replan_started",
+  data: replanReference,
+};
 const costTick = {
   ...eventBase,
   type: "cost.tick",
@@ -792,6 +880,12 @@ const runDone = {
   },
 };
 add(contracts.PlanDeltaEventSchema, planDelta);
+add(contracts.MotionSelectedEventSchema, motionSelected);
+add(contracts.MotionDeclinedEventSchema, motionDeclined);
+add(contracts.CapabilityRankedEventSchema, capabilityRanked);
+add(contracts.BindingChosenEventSchema, bindingChosen);
+add(contracts.PolicyWarningEventSchema, policyWarning);
+add(contracts.ReplanStartedEventSchema, replanStarted);
 add(contracts.TargetStateEventSchema, targetState);
 add(contracts.CostTickEventSchema, costTick);
 add(contracts.SignalAddedEventSchema, signalAdded);
@@ -800,7 +894,7 @@ add(contracts.ApprovalRequiredEventSchema, approvalRequired);
 add(contracts.MessageSentEventSchema, messageSent);
 add(contracts.InteractionReceivedEventSchema, interactionReceived);
 add(contracts.RunDoneEventSchema, runDone);
-add(contracts.SseEventSchema, runDone);
+add(contracts.SseEventSchema, capabilityRanked);
 
 for (const [name, exported] of Object.entries(contracts)) {
   if (exported instanceof z.ZodType) {

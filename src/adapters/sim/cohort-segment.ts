@@ -16,6 +16,14 @@ export const cohortSegmentSimAdapter = {
   adapterId: "cohort.segment",
   capability: "segment.build",
   unitCost: unitCost("request", 0),
+  profile: {
+    coverage: { geographies: ["Bengaluru"], categories: ["*"] },
+    freshnessDays: 0,
+    expectedConfidence: 0.85,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "First-party warehouse",
+  },
   async execute(input: Input): Promise<Output> {
     await watchableDelay(input);
     const estimatedSize =

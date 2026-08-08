@@ -13,6 +13,14 @@ export const marketWebSimAdapter = {
   adapterId: "market.web",
   capability: "web.fetch",
   unitCost: unitCost("request", 0),
+  profile: {
+    coverage: { geographies: ["Bengaluru"], categories: ["*"] },
+    freshnessDays: 0,
+    expectedConfidence: 1,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "Firecrawl",
+  },
   async execute(input: Input): Promise<Output> {
     await watchableDelay(input);
     const business = simWorld.businesses.find(

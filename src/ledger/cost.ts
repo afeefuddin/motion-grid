@@ -43,10 +43,8 @@ export function capabilityUnits<C extends CapabilityId>(
       return capabilityContracts["people.find"].output.parse(output).people
         .length;
     case "message.send":
-      return 1;
     case "ads.plan":
-      return capabilityContracts["ads.plan"].output.parse(output)
-        .estimatedImpressions;
+      return 1;
     case "web.fetch":
     case "segment.build":
       return 1;

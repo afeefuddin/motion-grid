@@ -13,6 +13,14 @@ export const marketReviewsSimAdapter = {
   adapterId: "market.reviews",
   capability: "reviews.fetch",
   unitCost: unitCost("record", 0),
+  profile: {
+    coverage: { geographies: ["Bengaluru"], categories: ["*"] },
+    freshnessDays: 0,
+    expectedConfidence: 1,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "Outscraper, Yelp",
+  },
   async execute(input: Input): Promise<Output> {
     await watchableDelay(input);
     const business = simWorld.businesses.find(

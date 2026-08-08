@@ -22,7 +22,14 @@ import {
   TargetStatusSchema,
 } from "./enums";
 import { NonnegativeCentsSchema } from "./payloads";
-import { DualBudgetSchema, PlanDataSchema } from "./steps";
+import {
+  AdapterChoiceSchema,
+  CapabilityRankingSchema,
+  DeclinedMotionSchema,
+  DualBudgetSchema,
+  PlanDataSchema,
+  ReplanReferenceSchema,
+} from "./steps";
 
 export const ApiErrorSchema = z.object({
   error: z.object({
@@ -133,6 +140,48 @@ export const PlanDeltaEventSchema = EventEnvelopeSchema.extend({
   }),
 });
 
+export const MotionSelectedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("motion_selected"),
+  data: z.object({
+    motionId: MotionIdSchema,
+    rationale: z.string().min(1),
+  }),
+});
+
+export const MotionDeclinedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("motion_declined"),
+  data: DeclinedMotionSchema,
+});
+
+export const CapabilityRankedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("capability_ranked"),
+  data: CapabilityRankingSchema,
+});
+
+export const BindingChosenEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("binding_chosen"),
+  data: z.object({
+    capabilityId: CapabilityIdSchema,
+    chosen: AdapterChoiceSchema,
+  }),
+});
+
+export const PolicyWarningEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("policy_warning"),
+  data: z.object({
+    warning: z.object({
+      kind: z.literal("budget_threshold"),
+      utilizationBasisPoints: z.int().nonnegative(),
+    }),
+    reason: z.string().min(1),
+  }),
+});
+
+export const ReplanStartedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("replan_started"),
+  data: ReplanReferenceSchema,
+});
+
 export const TargetStateEventSchema = EventEnvelopeSchema.extend({
   type: z.literal("target.state"),
   data: z.object({
@@ -194,6 +243,12 @@ export const RunDoneEventSchema = EventEnvelopeSchema.extend({
 
 export const SseEventSchema = z.discriminatedUnion("type", [
   PlanDeltaEventSchema,
+  MotionSelectedEventSchema,
+  MotionDeclinedEventSchema,
+  CapabilityRankedEventSchema,
+  BindingChosenEventSchema,
+  PolicyWarningEventSchema,
+  ReplanStartedEventSchema,
   TargetStateEventSchema,
   CostTickEventSchema,
   SignalAddedEventSchema,

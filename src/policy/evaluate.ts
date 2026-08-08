@@ -25,6 +25,12 @@ export function operatingBudgetCap(
       decision: "allow",
       reason:
         "Operating budget has reached at least 80%; continue with a budget warning.",
+      warning: {
+        kind: "budget_threshold",
+        utilizationBasisPoints: Math.floor(
+          (afterCents * 10_000) / request.budgetCents,
+        ),
+      },
     };
   }
   return { decision: "allow", reason: "Operating cost is within budget." };

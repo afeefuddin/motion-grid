@@ -179,19 +179,38 @@ opportunistically by three.
 
 ## Done when
 
-- [ ] Every addition is optional or defaulted; **T4's current planner output still parses**
-- [ ] All six sim adapters declare a `profile`; none has changed `execute` behaviour
-- [ ] Existing policy tests pass **unchanged** — the reason strings are untouched
-- [ ] `ads.plan` bills one request; a 500k-impression estimate no longer moves the operating ledger
-- [ ] Migration generated and applied if adapter mode is persisted
-- [ ] `pnpm typecheck`, `pnpm test`, `pnpm check` green across the repo
-- [ ] `grep -rn " as \| any" src/contracts src/capabilities src/policy src/ledger` returns nothing
-- [ ] **Announced to T5, T6, T9 owners** — they are blocked until this lands
-- [ ] Handoff note written
+- [x] Every addition is optional or defaulted; **T4's current planner output still parses**
+- [x] All six sim adapters declare a `profile`; none has changed `execute` behaviour
+- [x] Existing policy tests pass **unchanged** — the reason strings are untouched
+- [x] `ads.plan` bills one request; a 500k-impression estimate no longer moves the operating ledger
+- [x] Migration generated and applied if adapter mode is persisted (not persisted; no migration needed)
+- [x] `pnpm typecheck` and `pnpm check` are green; all non-database tests pass. The repository
+      has no `test` script, and its database integration suite requires `DATABASE_URL`.
+- [x] `grep -rn " as \| any" src/contracts src/capabilities src/policy src/ledger` returns nothing
+- [x] **Announced to T5, T6, T9 owners** — they are blocked until this lands
+- [x] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — the exact new schema names T5 and T9 import, and anything you found in the
-contracts that is wrong but you deliberately did not change.)_
+**C2 is complete; T5, T6, and T9 are unblocked.**
+
+T5 should import `RankingWeightsSchema`, `AdapterCandidateSchema`,
+`CapabilityRankingSchema`, `AdapterChoiceSchema`, `RankedBindingSchema`,
+`DeclinedCapabilitySchema`, `DeclinedMotionSchema`, and `ReplanReferenceSchema` from
+`src/contracts/steps.ts`. T9 can import the same plan schemas plus
+`MotionSelectedEventSchema`, `MotionDeclinedEventSchema`, `CapabilityRankedEventSchema`,
+`BindingChosenEventSchema`, `PolicyWarningEventSchema`, `ReplanStartedEventSchema`, and the
+updated `SseEventSchema` from `src/contracts/api.ts`.
+
+`MotionPlanSchema.bindings`, `MotionPlanSchema.declined`,
+`PlanDataSchema.declinedMotions`, and `PlanDataSchema.replanOf` all default at the parse
+boundary, so T4's existing output remains valid. Adapter mode is not persisted in
+`src/db/schema.ts`, so no migration was generated. The existing `message.send` contract and
+documentation already agree that channel is an input field on one capability.
+
+One integration detail is deliberately unchanged: the six T2 simulation adapters expose the
+legacy `adapterId`/`capability` shape rather than implementing T3's `Adapter` interface
+directly. C2 added the required `profile` metadata without changing their `execute(input)`
+contract; T5 should account for that shape when assembling ranking candidates.

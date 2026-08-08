@@ -28,6 +28,30 @@ export const indexDbSimAdapter = {
   adapterId: "index.db",
   capability: "db.query",
   unitCost: unitCost("record", 0.2),
+  profile: {
+    coverage: {
+      geographies: ["Bengaluru"],
+      categories: [
+        "beauty",
+        "wellness",
+        "fitness",
+        "lifestyle",
+        "pet care",
+        "cafés",
+        "salon & spa",
+        "skin & derma clinic",
+        "dental clinic",
+        "boutique gym & yoga studio",
+        "pet clinic",
+        "speciality café",
+      ],
+    },
+    freshnessDays: 0,
+    expectedConfidence: 0.95,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "Apollo, Modash",
+  },
   async execute(input: Input): Promise<Output> {
     await watchableDelay(input);
     if (input.entityKind === "company") {

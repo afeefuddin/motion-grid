@@ -8,6 +8,10 @@ export type ConsentBasis = "legitimate_interest" | "explicit_opt_in";
 export interface PolicyDecision {
   readonly decision: "allow" | "deny" | "require_approval";
   readonly reason: string;
+  readonly warning?: {
+    readonly kind: "budget_threshold";
+    readonly utilizationBasisPoints: number;
+  };
 }
 
 export interface OperatingBudgetRequest {

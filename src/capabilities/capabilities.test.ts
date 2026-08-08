@@ -14,6 +14,14 @@ const geoAdapter: Adapter<"geo.query"> = {
   id: "market.geo",
   provides: ["geo.query"],
   mode: "sim",
+  profile: {
+    coverage: { geographies: ["*"], categories: ["*"] },
+    freshnessDays: 0,
+    expectedConfidence: 1,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "Google Places",
+  },
   unitCost: {
     unit: "record",
     operatingCents: 0.3,

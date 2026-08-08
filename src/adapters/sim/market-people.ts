@@ -13,6 +13,14 @@ export const marketPeopleSimAdapter = {
   adapterId: "market.people",
   capability: "people.find",
   unitCost: unitCost("record", 1.1),
+  profile: {
+    coverage: { geographies: ["Bengaluru"], categories: ["*"] },
+    freshnessDays: 0,
+    expectedConfidence: 0.9,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "Apollo, Hunter",
+  },
   async execute(input: Input): Promise<Output> {
     await watchableDelay(input);
     const business = simWorld.businesses.find(

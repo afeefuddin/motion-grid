@@ -28,6 +28,24 @@ export const marketGeoSimAdapter = {
   adapterId: "market.geo",
   capability: "geo.query",
   unitCost: unitCost("record", 0.3),
+  profile: {
+    coverage: {
+      geographies: ["Bengaluru"],
+      categories: [
+        "salon & spa",
+        "skin & derma clinic",
+        "dental clinic",
+        "boutique gym & yoga studio",
+        "pet clinic",
+        "speciality café",
+      ],
+    },
+    freshnessDays: 0,
+    expectedConfidence: 0.95,
+    rateLimitPerMinute: null,
+    writesExternalState: false,
+    productionPath: "Outscraper, Google Places",
+  },
   async execute(input: Input): Promise<Output> {
     await watchableDelay(input);
     const query = searchTerms(input.query);
