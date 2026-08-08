@@ -21,6 +21,7 @@ const plan: PlanData = {
     },
   ],
   policies: [],
+  suggestedActions: [],
   budget: {
     operating: { currency: "USD", amountMinor: 100 },
     commit: { currency: "INR", amountMinor: 0 },

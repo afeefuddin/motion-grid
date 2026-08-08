@@ -159,6 +159,45 @@ function planRationale(motionId: MotionId): string {
   return `Selected because connected sources satisfy the declared discovery and evidence requirements. Targets are ordered by descending assessment score using this rubric: ${rubric}. Rejected targets remain visible with their assessment reason.`;
 }
 
+function suggestedActions(
+  motionIds: readonly MotionId[],
+  geography: string,
+): PlanData["suggestedActions"] {
+  if (!motionIds.includes("business.local")) {
+    return [];
+  }
+
+  return [
+    {
+      kind: "person_to_person",
+      title: "Ask for trusted introductions",
+      description:
+        "Have customers, partners, or creators introduce the team personally to the highest-fit local businesses.",
+      rationale:
+        "A trusted introduction can reach an owner or manager without adding paid-data or automated-message volume.",
+      motionIds: ["business.local"],
+    },
+    {
+      kind: "print_materials",
+      title: `Test trackable flyers in ${geography}`,
+      description:
+        "Place a small flyer with a campaign-specific QR code at relevant community hubs and neighboring businesses.",
+      rationale:
+        "A unique QR destination keeps an offline test measurable while extending reach beyond discoverable digital contacts.",
+      motionIds: ["business.local"],
+    },
+    {
+      kind: "door_to_door",
+      title: "Run a focused door-to-door route",
+      description:
+        "Visit a compact cluster of qualified businesses with a short demo and record consent before any follow-up.",
+      rationale:
+        "In-person contact can validate the problem and identify the decision-maker when online contact data is incomplete.",
+      motionIds: ["business.local"],
+    },
+  ];
+}
+
 function rankedBinding(
   capabilityId: CapabilityId,
   input: BuildPlanInput,
@@ -311,6 +350,10 @@ function buildPlan(input: BuildPlanInput): OrchestratorResult {
           "Each motion must satisfy its declared consent basis before outreach.",
       },
     ],
+    suggestedActions: suggestedActions(
+      motions.map((motion) => motion.motionId),
+      input.spec.geography,
+    ),
     budget: input.spec.budget,
     declinedMotions: evaluated.flatMap(({ motionId, reason }) => {
       return reason === null ? [] : [{ motionId, reason }];

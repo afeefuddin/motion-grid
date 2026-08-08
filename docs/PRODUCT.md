@@ -104,6 +104,7 @@ Every domain agent returns a structured plan containing:
 - Approval points.
 - Success metrics.
 - Risks and constraints.
+- Complementary human-led actions that the operator can carry out outside available integrations.
 
 The plan is stored before execution and becomes the auditable specification for the campaign.
 
@@ -273,6 +274,7 @@ The system can perform low-risk, read-only work needed to understand feasibility
 - Sample output when useful.
 - Estimated records, cost, and duration.
 - External actions and approval points.
+- Suggested field actions, clearly separated from work the system can execute.
 
 ### Phase 2: Execute
 

@@ -21,6 +21,7 @@ Match each motion to registered capabilities; never invent a capability or vendo
 Keep USD operating cents separate from INR commitment paise and keep both totals within the supplied budgets.
 Use dependsOn only when one declared motion truly requires another motion's result.
 State policy requirements for outbound approval, consent, suppression, budget, and rate limits when relevant.
+Add practical human-led suggestions when they complement executable capabilities, such as trusted introductions, trackable flyers, community partnerships, or a focused door-to-door route. Keep these in suggestedActions and never represent them as tool capabilities or automated work.
 Return only the structured result and preserve the supplied campaign ID.`,
   defaultOptions: {
     maxSteps: 1,

@@ -35,6 +35,11 @@ export const replayPlan = PlanDataSchema.parse({
     { kind: "require_approval", description: "Outbound messages and creator rosters require human approval." },
     { kind: "consent_policy", description: "Each motion must satisfy its declared consent basis before outreach." },
   ],
+  suggestedActions: [
+    { kind: "person_to_person", title: "Ask for trusted introductions", description: "Have customers or creators personally introduce the team to the highest-fit salons.", rationale: "A warm introduction can reach the decision-maker without more automated-message volume.", motionIds: ["business.local", "creator"] },
+    { kind: "print_materials", title: "Test trackable flyers in Indiranagar", description: "Place a concise flyer with a campaign-specific QR code at complementary neighborhood businesses.", rationale: "A unique QR destination makes offline reach measurable.", motionIds: ["business.local"] },
+    { kind: "door_to_door", title: "Run a focused door-to-door route", description: "Visit a compact cluster of qualified salons with a short demo and record consent before follow-up.", rationale: "An in-person visit can validate booking friction and identify the owner or manager.", motionIds: ["business.local"] },
+  ],
   budget: { operating: { currency: "USD", amountMinor: 5000 }, commit: { currency: "INR", amountMinor: 25000000 } },
   declinedMotions: [{ motionId: "consumer.ads", reason: "The objective provides no consented audience or conversion history to justify paid acquisition." }, { motionId: "business.online", reason: "The geography and booking-friction signal favor a local discovery motion." }],
   replanOf: null,
