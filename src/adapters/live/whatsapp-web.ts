@@ -5,7 +5,6 @@ import type {
   CapabilityOutput,
 } from "../../capabilities/registry";
 
-const E164_PHONE_NUMBER = /^\+[1-9]\d{7,14}$/;
 const WhatsAppWebResponseSchema = z.object({
   messageId: z.string().min(1).nullable().optional(),
   requestId: z.string().min(1).optional(),
@@ -166,13 +165,5 @@ export class WhatsAppWebAdapter implements Adapter<"message.send"> {
 }
 
 function whatsappAddress(value: string) {
-  const phoneNumber = value.trim().replace(/^whatsapp:/, "");
-  if (!E164_PHONE_NUMBER.test(phoneNumber)) {
-    throw new WhatsAppWebError(
-      "WhatsApp numbers must use E.164 format, for example +919876543210.",
-      "invalid_recipient",
-      422,
-    );
-  }
-  return phoneNumber;
+  return value.trim().replace(/^whatsapp:/, "");
 }
