@@ -12,6 +12,8 @@
     "contracts:smoke": "tsx src/contracts/smoke.ts",
     "sim:generate": "tsx src/sim/generate.ts",
     "sim:test": "tsx src/adapters/sim/adapters.test.ts",
+    "seed": "tsx scripts/seed.ts",
+    "generated:prewarm": "tsx scripts/prewarm-generated.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "deploy:mastra": "pnpm dlx mastra@1.23.0 deploy --env production --region iad"
