@@ -90,4 +90,30 @@ Cover `bulkUpsert` dedup and the two-currency budget update explicitly.
 
 ## Handoff note
 
-_(fill in)_
+Completed 2026-08-08.
+
+- Added an HMR-safe Drizzle client over `DATABASE_URL`. The Drizzle instance and its
+  postgres.js pool share one `globalThis` entry; one-shot processes can call
+  `closeDatabase()` to release the pool.
+- Added contract-parsed repositories for all 18 persisted entities, including the
+  `motion_allocation`, `policy`, and `approval` tables omitted from the abbreviated
+  deliverable list. Repository inserts accept types inferred from the frozen
+  `New*Schema` contracts, and entity reads parse through their frozen `*Schema` contracts.
+- `targetRepo.bulkUpsert` removes duplicate natural keys within an incoming batch and uses
+  the database `(campaign_id, kind, external_ref)` conflict target across runs. Rediscovery
+  updates relationship/name/payload but preserves workflow state; callers use
+  `updateState` for explicit transitions.
+- `campaignRepo.updateBudgetSpend(id, operating, commit)` updates operating USD cents and
+  commit INR paise independently. It performs no summing or currency conversion.
+- `planRepo.create` can atomically persist motion allocations, and
+  `assessmentRepo.create` can atomically persist its signals. Signal payloads, including
+  the caller-provided documentary `verified` boolean, are stored unchanged after contract
+  parsing.
+- Added Postgres integration coverage for all entities and every public operation. The
+  suite explicitly verifies incoming and cross-run target deduplication, separate currency
+  updates, false `verified` persistence, graph lookup from either endpoint, aggregate tool
+  cost, message transitions, and suppression lookup. It passes with:
+  `DATABASE_URL=postgresql://postgres:postgres@localhost:5433/motiongrid pnpm exec tsx
+  --test src/db/repositories/repositories.test.ts`.
+- `pnpm typecheck`, `pnpm build`, Biome checks, and the required repository grep for casts
+  and `any` all pass.
