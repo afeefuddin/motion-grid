@@ -56,6 +56,8 @@ jobs:
           MASTRA_PROJECT_ID: ${{ vars.MASTRA_PROJECT_ID }}
         run: |
           umask 077
+          env_file="$PWD/.mastra-production.env"
+          trap 'rm -f "$env_file"' EXIT
           # Delivery secrets stay with the Next.js deployment; this runtime needs model access.
           {
             printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
@@ -63,5 +65,5 @@ jobs:
             if [ -n "$ANTHROPIC_GENERATED_MARKET_MODEL" ]; then
               printf 'ANTHROPIC_GENERATED_MARKET_MODEL=%s\n' "$ANTHROPIC_GENERATED_MARKET_MODEL"
             fi
-          } > "$RUNNER_TEMP/mastra-production.env"
-          pnpm run deploy:mastra --yes --env-file "$RUNNER_TEMP/mastra-production.env"
+          } > "$env_file"
+          pnpm run deploy:mastra --yes --env-file "$env_file"
