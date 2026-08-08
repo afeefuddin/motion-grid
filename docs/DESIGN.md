@@ -149,6 +149,12 @@ The Grid is a durable record, not a spreadsheet cosplay.
 - Do not reorder rows under the pointer unless live sorting is explicitly enabled.
 - Use warm separators and quiet zebra or hover treatment instead of boxed cells.
 
+### Generated decision data
+
+- Never render weighted rubrics as one generated paragraph. Separate the decision summary from a scannable criterion list that shows humanized names, weights, and descriptions.
+- Label provider-selection reasoning as operational context rather than styling it as a quotation.
+- Keep comparison labels and values at normal interface reading sizes; preserve horizontal scrolling when all decision dimensions cannot fit without shrinking text.
+
 ### Product visualizations
 
 Maps, graphs, funnels, and routes should use cobalt for active work, green for verified results, amber for approvals, coral for exceptions, and gray for excluded objects.
@@ -166,14 +172,15 @@ Evidence and approval drawers share the main application's rounded, warm-white s
 
 ### Campaign conversation and artifact
 
-The campaign conversation is a steering surface beside the durable campaign artifact, not a replacement for it.
+The campaign conversation is the primary steering surface. The durable campaign artifact remains directly reachable through dedicated, linkable campaign views rather than competing with the conversation for working space.
 
-- Keep the conversation and the current plan, Grid, or approval state visible together on wide screens.
+- Give the conversation the dominant center panel and keep a compact campaign-context rail visible on wide screens.
+- Link the plan, targets, and approvals to dedicated routes from that context rail; preserve the operator's place when navigating back to the conversation.
 - Treat each operator message as a change brief tied to one persisted run.
 - Show the specific agent or operational stage currently working, then replace running state with a clear completion, approval, or failure receipt.
 - Let streamed changes update the fixed artifact in place so the operator can see what the conversation changed.
 - Disable overlapping amendments while a change is running; preserve the typed instruction and explain what remains safe when a run fails.
-- On narrow screens, stack the bounded conversation above the artifact rather than reducing the artifact to a transcript.
+- On narrow screens, place the campaign-context navigation below the conversation and keep every destination available as a full route.
 - Do not use agent avatars or conversational theater. The MotionGrid mark denotes product authorship; operational labels communicate who owns the current work.
 
 ### Empty, loading, and error states

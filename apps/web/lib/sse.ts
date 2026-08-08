@@ -70,6 +70,7 @@ export function openSseStream(
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
+      controller.enqueue(encoder.encode(": connected\n\n"));
       let replay = history.get(runId) ?? [];
       if (lastEventId !== undefined && !lastEventId.startsWith("mastra:")) {
         const index = replay.findIndex((event) => event.id === lastEventId);
