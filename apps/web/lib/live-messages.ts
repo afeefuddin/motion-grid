@@ -10,7 +10,6 @@ import type { CapabilityId } from "../../../src/contracts/capabilities";
 import {
   ResendEmailAdapter,
   ResendEmailError,
-  WhatsAppWebAdapter,
   WhatsAppWebError,
 } from "../../../src/adapters/live";
 import type { Adapter } from "../../../src/capabilities/adapter";
@@ -31,8 +30,7 @@ import {
 import { evaluatePolicies } from "../../../src/policy";
 import { publishSseEvent } from "./sse";
 
-const WHATSAPP_SERVICE_URL = "https://wp.afeefuddin.com";
-const WHATSAPP_RECIPIENT = "+917827962990";
+const WHATSAPP_RECIPIENT = "917827962990";
 
 async function database() {
   const module = await import("../../../src/db/client");
@@ -81,18 +79,43 @@ function requireAllowedRecipient(channel: "email" | "whatsapp", address: string)
   }
 }
 
-function liveAdapter(channel: "email" | "whatsapp") {
-  if (channel === "whatsapp") {
-    return new WhatsAppWebAdapter({
-      baseUrl: WHATSAPP_SERVICE_URL,
-      apiKey: process.env.WHATSAPP_SERVICE_API_KEY ?? "",
-      from: "",
-    });
-  }
+function liveEmailAdapter() {
   return new ResendEmailAdapter({
     apiKey: process.env.RESEND_API_KEY ?? "",
     from: process.env.RESEND_FROM_EMAIL ?? "",
   });
+}
+
+async function sendWhatsAppMessage(message: string) {
+  const response = await fetch(
+    new URL("/messages/send", process.env.WHATSAPP_SERVICE_URL),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_SERVICE_API_KEY ?? ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ to: WHATSAPP_RECIPIENT, message }),
+    },
+  );
+  const payload = await response.json() as {
+    error?: string;
+    messageId?: string | null;
+    requestId?: string;
+    status?: string;
+  };
+  if (!response.ok) {
+    throw new MessageDeliveryError(
+      "whatsapp_web_error",
+      payload.error ?? `WhatsApp API returned HTTP ${response.status}.`,
+      response.status,
+    );
+  }
+  return {
+    providerRef: payload.messageId ?? payload.requestId ?? crypto.randomUUID(),
+    status: payload.status === "sent" ? "sent" as const : "accepted" as const,
+    acceptedAt: new Date().toISOString(),
+  };
 }
 
 class DatabaseToolCallWriter implements ToolCallWriter {
@@ -146,7 +169,9 @@ export async function approveAndDeliverMessage(
     persistedMessage.channel === "whatsapp"
       ? WHATSAPP_RECIPIENT
       : process.env.RESEND_TO_EMAIL ?? row.address;
-  const adapter = dependencies.adapter ?? liveAdapter(persistedMessage.channel);
+  const adapter = dependencies.adapter ?? (
+    persistedMessage.channel === "email" ? liveEmailAdapter() : undefined
+  );
   const suppressions = await db
     .select()
     .from(suppression)
@@ -166,7 +191,7 @@ export async function approveAndDeliverMessage(
         eq(message.status, "sent"),
       ),
     );
-  const proposedCents = Math.ceil(adapter.unitCost.operatingCents);
+  const proposedCents = Math.ceil(adapter?.unitCost.operatingCents ?? 0);
   const decision = evaluatePolicies([
     { kind: "require_approval", action: "send", approved: input.approved },
     {
@@ -197,7 +222,7 @@ export async function approveAndDeliverMessage(
       channel: persistedMessage.channel,
       runId: persistedMessage.runId,
       sentCount: sentRows[0] === undefined ? 0 : sentRows[0].total,
-      limit: adapter.profile.rateLimitPerMinute ?? 100,
+      limit: adapter?.profile.rateLimitPerMinute ?? 60,
     },
   ]);
 
@@ -263,7 +288,9 @@ export async function approveAndDeliverMessage(
     idempotencyKey: `message-${persistedMessage.id}`,
   };
   const output = persistedMessage.channel === "whatsapp"
-    ? await adapter.execute("message.send", capabilityInput)
+    ? dependencies.adapter === undefined
+      ? await sendWhatsAppMessage(persistedMessage.body)
+      : await dependencies.adapter.execute("message.send", capabilityInput)
     : await executeCapability({
     context: {
       campaignId: persistedMessage.campaignId,
@@ -273,10 +300,10 @@ export async function approveAndDeliverMessage(
     capability: getCapability("message.send"),
     binding: {
       capabilityId: "message.send",
-      adapterId: adapter.id,
-      mode: adapter.mode,
+      adapterId: adapter!.id,
+      mode: adapter!.mode,
     },
-    adapter,
+    adapter: adapter!,
     input: capabilityInput,
     ledger: dependencies.ledger ?? new DatabaseToolCallWriter(),
   });
