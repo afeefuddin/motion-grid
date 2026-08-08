@@ -64,4 +64,4 @@ jobs:
               printf 'ANTHROPIC_GENERATED_MARKET_MODEL=%s\n' "$ANTHROPIC_GENERATED_MARKET_MODEL"
             fi
           } > "$RUNNER_TEMP/mastra-production.env"
-          pnpm run deploy:mastra -- --yes --env-file "$RUNNER_TEMP/mastra-production.env"
+          pnpm run deploy:mastra --yes --env-file "$RUNNER_TEMP/mastra-production.env"
