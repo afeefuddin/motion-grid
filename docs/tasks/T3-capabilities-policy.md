@@ -104,16 +104,43 @@ Provide:
 
 ## Done when
 
-- [ ] Registry resolves every capability to a bound adapter
-- [ ] Every capability call writes a `tool_call` row — no bypass path exists
-- [ ] Policy decision table fully covered by tests
-- [ ] Ledger tested in both currencies; no function returns a summed total
-- [ ] `grep -rn " as \| any" src/capabilities src/policy src/ledger` returns nothing
-- [ ] Handoff note written
+- [x] Registry resolves every capability to a bound adapter
+- [x] Every capability call writes a `tool_call` row — no bypass path exists
+- [x] Policy decision table fully covered by tests
+- [x] Ledger tested in both currencies; no function returns a summed total
+- [x] `grep -rn " as \| any" src/capabilities src/policy src/ledger` returns nothing
+- [x] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — especially the adapter interface shape, so T7 implements against the same thing
-T2 did)_
+Completed 2026-08-08.
+
+- `capabilityRegistry` defines all eight frozen capability contracts. Planning calls
+  `bindCapability(capabilityId, adapters, modePreference)` once and persists its
+  `{ capabilityId, adapterId, mode }`; execution calls `resolveBinding`, which deliberately
+  fails instead of substituting a different provider.
+- Adapter implementations use `Adapter<C>` from `src/capabilities/adapter.ts`, where `C` is
+  the provided capability ID (for example, `Adapter<"geo.query">`). The required shape is
+  `{ id, provides, mode, unitCost, execute(capabilityId, input) }`. `unitCost` is the matching
+  frozen capability cost shape. Simulation shadow rates set `projected: true`; live billed
+  rates set it to `false`.
+- All callers use `executeCapability`. It checks the persisted binding, parses input and
+  output through the registry contract, calculates billable units, and awaits the
+  `ToolCallWriter` before returning output. A failed ledger write therefore cannot expose an
+  unledgered result. Repository work only needs to implement `ToolCallWriter.record` by
+  inserting the supplied fields into `tool_call`.
+- The deterministic policy module provides one evaluator per policy plus `evaluatePolicies`.
+  Denial wins over approval, approval wins over allow, and input order breaks ties. Operating
+  budget allows with a human-readable warning from 80% through 99% and denies at 100%.
+  Suppressions normalize address casing and cover both workspace and campaign scope.
+- Ledger money is always integer minor units: USD cents for operating cost and INR paise for
+  commitments. `estimate` and `remaining` return separate `{ operating, commit }` fields;
+  there is no merged-total API or FX conversion. Projected operating cost is tracked apart
+  from actual spend. INR display uses `Intl.NumberFormat("en-IN", ...)`.
+- Verification: `pnpm typecheck`, Biome over all three owned directories, the zero-cast grep,
+  and 15 Node tests pass. Tests cover the full policy branch table, budget thresholds at 79%,
+  80%, 99%, 100%, and 101%, exact over-rate roster copy, deterministic binding, funnel
+  recording, dual-currency arithmetic, projected spend isolation, token pricing, and Indian
+  digit grouping.
