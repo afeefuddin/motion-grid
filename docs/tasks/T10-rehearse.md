@@ -21,7 +21,7 @@ silently rewriting their code.
 | Check | Passes when |
 |---|---|
 | Typecheck | `pnpm typecheck` clean, **covering `apps/web` as well as `src`** (C1) |
-| **No casts** | `grep -rn " as \| : any" src apps/web \| grep -v node_modules` returns nothing. A hit means a contract is wrong — report it, don't cast |
+| **No casts** | `grep -rn " as \| : any" src apps/web \| grep -v node_modules` returns nothing — **including the relocated live adapters**, which had two known violations C1 recorded and T7 fixed. A hit means a contract is wrong — report it, don't cast |
 | Tests | `pnpm test` green |
 | **Ranking determinism** | same spec twice → identical candidate order and identical scores, with no model call on the second run |
 | **Ranking honesty** | every `RankedBinding` contains every candidate considered, losers included, each with a reason |

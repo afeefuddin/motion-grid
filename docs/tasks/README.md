@@ -45,9 +45,11 @@ Read `../PLAN.md` only if you need product context. The brief is authoritative f
   recorded-replay file as the offline fallback.
 - **`consumer.ads` execution is cut.** It is now *declined at plan time with a stated reason*,
   which is a better demo beat than a fourth branch producing an estimate.
-- **C1 and C2 are new.** C1 removes the pre-T0 architecture still sitting in `packages/**` and
-  `apps/agent-runtime/**`, which contradicts `src/contracts/`. C2 is the single owned contract
-  unfreeze that ranking needs. Contracts freeze again the moment C2 lands.
+- **C1 and C2 are new.** C1 removes the pre-T0 architecture in `packages/domain|database|policy`
+  and `apps/agent-runtime/**`, which contradicts `src/contracts/`. It **relocates rather than
+  deletes** `packages/integrations` — that package holds working Twilio and Resend adapters
+  against the real SDKs, and they move to `src/adapters/live/` as a pure rename. C2 is the
+  single owned contract unfreeze that ranking needs; contracts freeze again the moment it lands.
 - **The UI lives at `apps/web/`,** not the repo root. C1 corrects every brief that says
   otherwise.
 

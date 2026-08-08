@@ -15,24 +15,40 @@ src/adapters/live/**
 
 ## You are inheriting working code — read this first
 
-`apps/web` already contains **functioning Twilio and Resend integrations** from before T0, and
-C1 was explicitly forbidden from touching them:
+**Live delivery already works.** Roughly 300 lines of it exist from before T0, against the real
+`twilio` and `resend` SDKs. C1 relocated the provider adapters into your path without changing
+a line of their logic; everything else it left alone:
 
 ```
-apps/web/app/api/messages/email/send/route.ts       Resend send, server-side allowlist
-apps/web/app/api/messages/whatsapp/send/route.ts    Twilio WhatsApp send, allowlist
-apps/web/app/api/webhooks/twilio/whatsapp/route.ts  inbound WhatsApp
-apps/web/app/api/webhooks/twilio/status/route.ts    delivery status
-apps/web/lib/twilio-webhook.ts                      signature verification
-.env.example + README.md                            setup for both, already written
+src/adapters/live/twilio-whatsapp.ts       Twilio SDK — E.164 validation, status callbacks,
+                                           typed errors, validateTwilioWebhook signature check
+src/adapters/live/resend-email.ts          Resend SDK — idempotency keys, typed errors
+apps/web/app/api/messages/whatsapp/send/   send route: allowlist + E.164 + typed error mapping
+apps/web/app/api/messages/email/send/      send route: allowlist + typed error mapping
+apps/web/app/api/webhooks/twilio/whatsapp/ inbound WhatsApp
+apps/web/app/api/webhooks/twilio/status/   delivery status
+apps/web/lib/twilio-webhook.ts             signature verification
+.env.example + README.md                   setup for both, already written and correct
 ```
 
-**Adopt and refactor these; do not rewrite them.** The allowlists and signature verification
-are the parts most likely to be got wrong under time pressure, and they are already right. Your
-job is to move the send logic behind the `message.send` capability contract so it runs through
-T3's `executeCapability` funnel and policy gate, and to keep the route handlers as thin
-entry points. C1's handoff note lists any import these files lost when `packages/**` was
-deleted.
+**Adopt and refactor; do not rewrite.** The allowlists, the E.164 validation and the webhook
+signature verification are the parts most easily got wrong under time pressure, and they are
+already right. Your job is:
+
+1. Wrap `TwilioWhatsAppAdapter` and `ResendEmailAdapter` in the `Adapter<"message.send">`
+   contract from `src/capabilities/adapter.ts`, so sends run through `executeCapability` and
+   the policy gate rather than being called directly from a route.
+2. Keep the route handlers thin — parse, allowlist, delegate.
+3. Fix the two known rule violations C1 recorded: a cast on a caught error in
+   `twilio-whatsapp.ts` and a non-null assertion in `resend-email.ts`. You are the only task
+   that touches these files with a working send in front of it.
+
+**Decide and document the throw/return boundary.** Both inherited adapters throw typed errors;
+`executeCapability` has no try/catch, so a throw propagates to T6's `.foreach()` catch. That is
+consistent with rule 4, but rule 5 says errors are values inside the pipeline. Pick one, apply
+it to both adapters, and say which in your handoff — T6 needs to know.
+
+Read C1's handoff note before you start.
 
 ## Read-only
 

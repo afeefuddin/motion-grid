@@ -33,7 +33,8 @@ Two constraints drive the structure:
 | Market data | Committed fixture **plus** a cached `generated` adapter | Off-script objectives work; determinism and offline both survive; the ranker gains a real choice |
 | `consumer.ads` | Declined at plan time, not executed | One reasoned refusal replaces a whole workflow branch |
 | Mock UI layer | **Cut** | T9 builds once against real endpoints; one recorded-replay file is the only fixture |
-| Pre-T0 code | **Deleted** (`packages/**`, `apps/agent-runtime/**`) | Three competing sources of truth for types collapse to one |
+| Pre-T0 code | **Deleted** (`packages/domain\|database\|policy`, `apps/agent-runtime/**`) | Three competing sources of truth for types collapse to one |
+| Live integrations | **Relocated, not deleted** — `packages/integrations` → `src/adapters/live/` | Working Twilio + Resend adapters keep their proven logic and join the sim and generated adapters under one ownership path |
 
 ---
 
@@ -365,7 +366,8 @@ motion-grid/
 │   ├── orchestrator/**                   T5  ← selection, ranking, re-plan
 │   ├── adapters/sim/**                   T2  (profiles added by C2)
 │   ├── adapters/generated/**             T8  ← runtime market synthesis + cache
-│   ├── adapters/live/**                  T7
+│   ├── adapters/live/**                  C1 relocates → T7 owns
+│   │                                     twilio-whatsapp.ts · resend-email.ts (working today)
 │   ├── sim/**                            T2  (generator + fixtures)
 │   ├── motions/**                        T4
 │   ├── policy/** · ledger/**             T3  (one fix each by C2)
@@ -382,10 +384,18 @@ motion-grid/
     └── tasks/{C,T}*.md
 ```
 
-**Deleted by C1:** `packages/**` and `apps/agent-runtime/**` — pre-T0 code declaring a
-three-motion enum, a second `PolicyDecision`, and a third `CampaignRepository`, none of it
-typechecked. Three sources of truth is three too many. `src/mocks/**` is never created; the
-mock-UI task is cut.
+**Deleted by C1:** `packages/domain`, `packages/database`, `packages/policy` and
+`apps/agent-runtime/**` — pre-T0 code declaring a three-motion enum, a second `PolicyDecision`
+and a third `CampaignRepository`, none of it typechecked. Three sources of truth is three too
+many.
+
+**Relocated by C1, not deleted:** `packages/integrations` held ~184 lines of *working* Twilio
+and Resend adapters against the real SDKs. They move to `src/adapters/live/` as a pure rename —
+alongside the sim and generated adapters, where the ownership table always put them — and
+`packages/` disappears. The live delivery path is the one thing in this repo that has been
+proven against a real phone; it does not get rewritten.
+
+`src/mocks/**` is never created; the mock-UI task is cut.
 
 ---
 
@@ -447,7 +457,7 @@ container, and a smoke test imports every schema and parses one fixture of each.
 
 | Task | Owns | Deliverable | Done when |
 |---|---|---|---|
-| **C1 · Repo cleanup** | `packages/**`, `apps/agent-runtime/**`, root configs | Delete the pre-T0 architecture; one Next app at `apps/web`; `pnpm typecheck` covers it; a real `pnpm test`; `plan.md` → `docs/PRODUCT.md` | No `@motiongrid/*` imports remain; typecheck proven to cover `apps/web`; the Twilio/Resend routes are byte-identical |
+| **C1 · Repo cleanup** | `packages/**`, `apps/agent-runtime/**`, root configs | Delete the pre-T0 architecture; **relocate the working Twilio/Resend adapters to `src/adapters/live/`**; one Next app at `apps/web`; `pnpm typecheck` covers it; a real `pnpm test`; `plan.md` → `docs/PRODUCT.md` | No `@motiongrid/*` imports remain; `git diff --find-renames` shows the provider files as **pure renames**; typecheck proven to cover `apps/web` |
 | **C2 · Contract amendment** | `src/contracts/**` + one migration | Adapter `profile` metadata, `generated` mode, `RankedBinding`, declined-motion and re-plan fields, structured budget warning, `ads.plan` unit fix, orchestration SSE events | Every addition optional or defaulted so **T4's current output still parses**; existing policy tests pass unchanged; contracts re-frozen |
 
 **C2 blocks Wave 2.** It is the one deliberate unfreeze, it is small, and it has a single owner
