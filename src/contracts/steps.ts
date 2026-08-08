@@ -152,23 +152,10 @@ export const PolicyRequirementSchema = z.object({
   kind: z.string().min(1),
   description: z.string().min(1),
 });
-export const SuggestedActionSchema = z.object({
-  kind: z.enum([
-    "person_to_person",
-    "print_materials",
-    "door_to_door",
-    "community_partnership",
-  ]),
-  title: z.string().min(1),
-  description: z.string().min(1),
-  rationale: z.string().min(1),
-  motionIds: z.array(MotionIdSchema).min(1),
-});
 export const PlanDataSchema = z.object({
   campaignId: IdSchema,
   motions: z.array(MotionPlanSchema).min(1),
   policies: z.array(PolicyRequirementSchema),
-  suggestedActions: z.array(SuggestedActionSchema).default([]),
   budget: DualBudgetSchema,
   declinedMotions: z.array(DeclinedMotionSchema).default([]),
   replanOf: ReplanReferenceSchema.nullable().default(null),
