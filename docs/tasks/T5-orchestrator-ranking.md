@@ -148,21 +148,50 @@ the score was measured against. Rank order visible, rejected rows visible with r
 
 ## Done when
 
-- [ ] `consumer.ads`, `business.online`, `consumer.email` are declined with reasons in `declinedMotions`
-- [ ] Every selected capability has a `RankedBinding` containing **all** candidates with scores
-- [ ] Weights come from the model with a rationale; scores come from code; the split is provable
+- [x] `consumer.ads`, `business.online`, `consumer.email` are declined with reasons in `declinedMotions`
+- [x] Every selected capability has a `RankedBinding` containing **all** candidates with scores
+- [x] Weights come from the model with a rationale; scores come from code; the split is provable
       by a test that ranks with fixed weights and no model call
-- [ ] Malformed weights are rejected, not normalised
-- [ ] Ranking is deterministic — same spec twice, identical candidate order and identical scores
-- [ ] Budget denial mid-run triggers a re-plan that rebinds to a cheaper adapter and continues
-- [ ] Re-plan is capped and fails with a stated reason at the cap
-- [ ] Scorer unit-tested as a pure function with zero database and zero model calls
-- [ ] `grep -rn " as \| any" src/orchestrator` returns nothing
-- [ ] Handoff note written
+- [x] Malformed weights are rejected, not normalised
+- [x] Ranking is deterministic — same spec twice, identical candidate order and identical scores
+- [x] Budget denial mid-run triggers a re-plan that rebinds to a cheaper adapter and continues
+- [x] Re-plan is capped and fails with a stated reason at the cap
+- [x] Scorer unit-tested as a pure function with zero database and zero model calls
+- [x] `grep -rn " as \| any" src/orchestrator` returns nothing
+- [x] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — especially: the exact function T6 calls to plan, the function it calls to re-plan,
-and which adapter wins each capability in the demo campaign so T10 can script around it.)_
+Completed 2026-08-08.
+
+- T6 calls `planCampaign({ campaignId, spec }, options)` from `src/orchestrator`. The optional
+  adapter catalog is metadata-only and lets T6 include simulation, generated, and live
+  providers available for that run. The result uses the step-result shape and its successful
+  `data` is the complete `PlanData` to persist. The weights agent is called once, except for
+  one retry when its output is malformed; it never receives adapter IDs.
+- T6 calls `replanCampaign(input, options)` after emitting `replan_started`. Input contains
+  `replacedPlanId`, `previousPlan`, `spec`, `refusal`, and the zero-based `replanCount`. A
+  binding refusal also names `capabilityId` and `adapterId`. An operating-budget refusal raises
+  cost to 85%; a binding refusal keeps the named adapter visible but ineligible. At count two,
+  the function returns a stated failure instead of entering another loop.
+- `rankAdapters(request)` is the pure scoring entry point. It retains every declared candidate,
+  scores cost/freshness/confidence/coverage, marks coverage/rate-limit/refusal failures
+  ineligible, orders by score then byte-stable adapter ID, chooses the highest eligible row, and
+  performs no model, database, clock, or adapter-execution work.
+- With the currently connected default catalog, the demo winners are `market.geo` for
+  `geo.query`, `market.web` for `web.fetch`, `market.reviews` for `reviews.fetch`, and
+  `index.db` for creator `db.query`. When T6 supplies the demo's paid geo provider alongside
+  `market.geo`, a freshness/confidence-led initial plan can choose the paid provider; the
+  budget-refusal re-plan deterministically switches to free `market.geo`. This exact transition
+  is covered by the orchestrator regression test.
+- `business.local` and `creator` run. `consumer.ads`, `business.online`, and `consumer.email`
+  are declined. Contact enrichment is recorded under each selected motion's `declined` list and
+  deferred until a target receives a fit score. Each motion rationale serializes its weighted
+  rubric and declares descending score order while retaining rejected targets with reasons.
+- Verification: all 30 non-database tests pass (`DATABASE_URL` is unset, so the repository
+  integration suite is skipped), `pnpm typecheck` passes, Biome reports no orchestrator issues,
+  and the zero-cast grep is clean. Repository-wide Biome has seven pre-existing warnings in
+  `apps/web/app/globals.css` and `src/adapters/live/resend-email.ts` outside this task's owned
+  paths.
