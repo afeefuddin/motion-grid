@@ -12,11 +12,27 @@ export const OrganizationTargetPayloadSchema = z.object({
   phone: z.string().min(1).nullable(),
 });
 
+/**
+ * Source fields captured with a creator discovery result.
+ *
+ * Keeping this snapshot on the target lets qualification reason over the profile
+ * that was actually returned by discovery without asking another provider for it.
+ */
+export const CreatorProfileSnapshotSchema = z.object({
+  audienceGeography: z.record(z.string().min(1), ConfidenceSchema),
+  audienceInterests: z.record(z.string().min(1), ConfidenceSchema),
+  contentCategories: z.array(z.string().min(1)).min(1),
+  engagementRate: ConfidenceSchema,
+  viewToFollowerRatio: z.number().nonnegative(),
+  fakeFollowerEstimate: ConfidenceSchema,
+});
+
 export const PersonTargetPayloadSchema = z.object({
   platform: z.string().min(1),
   handle: z.string().min(1),
   followerCount: z.int().nonnegative(),
   rateCardCommitCents: NonnegativeCentsSchema.nullable(),
+  profile: CreatorProfileSnapshotSchema.optional(),
 });
 
 export const SegmentTargetPayloadSchema = z.object({

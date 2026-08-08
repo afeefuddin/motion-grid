@@ -11,6 +11,7 @@ import { PlanDataSchema } from "../../contracts";
 import { db } from "../../db/client";
 import {
   assessmentRepo,
+  approvalRepo,
   campaignConversationMessageRepo,
   campaignRepo,
   contactRepo,
@@ -66,6 +67,7 @@ const repositoryStore = {
   },
   saveContact: contactRepo.create,
   saveMessage: messageRepo.create,
+  saveApproval: approvalRepo.create,
   async updateTarget(
     targetId: Parameters<typeof targetRepo.updateState>[0],
     status: Parameters<typeof targetRepo.updateState>[1],

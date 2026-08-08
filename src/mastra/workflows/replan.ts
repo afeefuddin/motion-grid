@@ -12,6 +12,7 @@ import type {
   CapabilityOutput,
 } from "../../capabilities/registry";
 import type { CapabilityId } from "../../contracts/capabilities";
+import type { Approval } from "../../contracts/entities";
 import type { CampaignSpecSchema, PlanDataSchema } from "../../contracts/steps";
 import { type RankingAdapter, replanCampaign } from "../../orchestrator";
 
@@ -37,6 +38,12 @@ export type WorkflowEvent =
       readonly isFit: boolean;
       readonly reason: string;
       readonly droppedCount: number;
+    }
+  | {
+      readonly type: "approval.required";
+      readonly campaignId: string;
+      readonly runId: string;
+      readonly approval: Approval;
     };
 
 export interface WorkflowEventSink {

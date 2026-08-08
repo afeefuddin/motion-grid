@@ -42,7 +42,7 @@ export const motionRegistry = {
     targetKind: "organization",
     discovery: ["db.query"],
     discoveryTrigger: null,
-    observation: ["web.fetch"],
+    observation: ["web.fetch", "reviews.fetch"],
     rubric: onlineB2BRubric,
     contactModel: "individual",
     channels: ["email", "whatsapp"],

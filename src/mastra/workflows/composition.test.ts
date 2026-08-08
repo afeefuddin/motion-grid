@@ -128,6 +128,9 @@ test("selected motions run without plan approval and synthesis tolerates skipped
           async saveMessage() {
             throw new Error("No target should request a message.");
           },
+          async saveApproval() {
+            throw new Error("No target should request an approval.");
+          },
           async updateTarget() {},
         },
         agents: {

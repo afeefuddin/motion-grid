@@ -30,10 +30,14 @@ Read `../PLAN.md` only if you need product context. The brief is authoritative f
 | Wave | Tasks | Parallel | Budget | Status |
 |---|---|---|---|---|
 | 0 | T0 | no — blocking | ~1.5h | done |
-| 1 | T1 T2 T3 T4 | 4 agents | ~4h | T1–T3 done · T4 in flight |
-| 1.5 | C1 C2 | 2 agents | ~1.5h | **C2 blocks Wave 2** |
-| 2 | T5 T6 T7 T8 | 4 agents | ~4h | |
-| 3 | T9 T10 | 1–2 agents | ~4h | |
+| 1 | T1 T2 T3 T4 | 4 agents | ~4h | implementation handoffs recorded; final runtime verification pending |
+| 1.5 | C1 C2 | 2 agents | ~1.5h | implementation handoffs recorded |
+| 2 | T5 T6 T7 T8 | 4 agents | ~4h | implementation handoffs recorded; final runtime verification pending |
+| 3 | T9 T10 | 1–2 agents | ~4h | T9 landed; **T10 rehearsal and release verification remain outstanding** |
+| 4 | T11 | 1 agent | ~4h | source implementation landed; migration application and runtime verification pending |
+
+T11 followed the original graph after T9. Its source changes do not make T10 complete: no
+migration, end-to-end runtime run, or rehearsal should be inferred from this status table.
 
 ### What changed after T3
 
@@ -59,7 +63,11 @@ Read `../PLAN.md` only if you need product context. The brief is authoritative f
    additive amendment and re-freezes them on completion. Everyone else, before and after:
    **stop and escalate**. Do not edit `src/contracts/` or `src/db/schema.ts` — a silent edit
    breaks five agents.
-2. **Only T0 and C2 run migrations.** Everyone else assumes the schema exists.
+2. **Only a designated schema owner changes or runs schema operations.** T0, C2 when needed,
+   and T11 own their respective schema amendments; everyone else assumes the schema exists.
+   Environments apply committed migrations with `pnpm exec drizzle-kit migrate`, not
+   `pnpm db:push`. T11's `0001_organic_ozymandias.sql` is still pending application to a
+   configured database.
 3. **Write only inside your owned paths.** Every brief lists them explicitly.
 4. **End with a handoff note** appended to your own brief file: what you built, contract
    gaps you hit, what the next wave must know.

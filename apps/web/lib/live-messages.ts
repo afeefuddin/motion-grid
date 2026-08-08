@@ -1,4 +1,4 @@
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import {
   ApprovalSchema,
@@ -139,6 +139,10 @@ export async function approveAndDeliverMessage(
       409,
     );
   }
+  const to =
+    persistedMessage.channel === "whatsapp"
+      ? process.env.WHATSAPP_TO ?? row.address
+      : process.env.RESEND_TO_EMAIL ?? row.address;
   const adapter = dependencies.adapter ?? liveAdapter(persistedMessage.channel);
   const suppressions = await db
     .select()
@@ -170,6 +174,15 @@ export async function approveAndDeliverMessage(
       address: row.address,
       suppressions,
     },
+    // A delivery override redirects the provider call; it must not bypass suppression.
+    {
+      kind: "suppression_check",
+      workspaceId: row.workspaceId,
+      campaignId: persistedMessage.campaignId,
+      channel: persistedMessage.channel,
+      address: to,
+      suppressions,
+    },
     {
       kind: "operating_budget_cap",
       budgetCents: row.operatingBudgetCents,
@@ -185,28 +198,51 @@ export async function approveAndDeliverMessage(
     },
   ]);
 
-  const approvalRows = await db
-    .insert(approval)
-    .values({
-      campaignId: persistedMessage.campaignId,
-      runId: persistedMessage.runId,
-      messageId: persistedMessage.id,
-      decision: decision.decision,
-      status: decision.decision === "allow" ? "approved" : "rejected",
-      reason: decision.reason,
-      decidedAt: new Date(),
-      decidedBy: input.decidedBy,
-    })
-    .returning();
+  const decidedAt = new Date();
+  const pendingApproval = await db
+    .select()
+    .from(approval)
+    .where(
+      and(
+        eq(approval.messageId, persistedMessage.id),
+        eq(approval.status, "pending"),
+      ),
+    )
+    .orderBy(desc(approval.requestedAt))
+    .limit(1);
+  const existingPendingApproval = pendingApproval[0];
+  const approvalRows =
+    existingPendingApproval === undefined
+      ? await db
+          .insert(approval)
+          .values({
+            campaignId: persistedMessage.campaignId,
+            runId: persistedMessage.runId,
+            messageId: persistedMessage.id,
+            decision: decision.decision,
+            status: decision.decision === "allow" ? "approved" : "rejected",
+            reason: decision.reason,
+            decidedAt,
+            decidedBy: input.decidedBy,
+          })
+          .returning()
+      : await db
+          .update(approval)
+          .set({
+            decision: decision.decision,
+            status: decision.decision === "allow" ? "approved" : "rejected",
+            reason: decision.reason,
+            decidedAt,
+            decidedBy: input.decidedBy,
+            updatedAt: decidedAt,
+          })
+          .where(eq(approval.id, existingPendingApproval.id))
+          .returning();
   const recordedApproval = ApprovalSchema.parse(approvalRows[0]);
   if (decision.decision !== "allow") {
     return { message: persistedMessage, approval: recordedApproval };
   }
 
-  const to =
-    persistedMessage.channel === "whatsapp"
-      ? process.env.WHATSAPP_TO ?? row.address
-      : process.env.RESEND_TO_EMAIL ?? row.address;
   requireAllowedRecipient(persistedMessage.channel, to);
   const from =
     persistedMessage.channel === "whatsapp"

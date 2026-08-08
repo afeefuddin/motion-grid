@@ -20,6 +20,8 @@ Choose only creator, business.local, business.online, consumer.ads, or consumer.
 When a budget is supplied, preserve its USD operating and INR commitment amounts exactly.
 When no budget is supplied, infer both amounts from the objective's scale, geography, and selected motions.
 Infer a concise campaign name, geography, target criteria, allowed channels, and a measurable success metric from the objective.
+For business.local and business.online, always set discoveryQuery to a concise target category label only (for example, "dental clinic"). Do not put qualifying pain, conversion, reachability, geography, or provider-search terms in discoveryQuery; keep those in targetCriteria. Omit discoveryQuery when no organization motion is selected.
+When creator is selected, include a creator audience or content taxonomy in targetCriteria (for example, "beauty creators") so profile qualification can evaluate audience fit without inferring a category from a business term.
 Do not add a motion or channel without support in the objective. Return only the structured result.`,
   defaultOptions: {
     maxSteps: 1,

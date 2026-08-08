@@ -38,6 +38,16 @@ test("local business motion is WhatsApp-first and grounded in observable defects
   );
 });
 
+test("online business motion collects both sources required by its rubric", () => {
+  const motion = motionRegistry["business.online"];
+
+  assert.deepEqual(motion.observation, ["web.fetch", "reviews.fetch"]);
+  assert.deepEqual(
+    motion.rubric.map((criterion) => criterion.sources),
+    [["website"], ["reviews"]],
+  );
+});
+
 test("triggered and no-contact motions stay declarative", () => {
   assert.equal(
     motionRegistry["consumer.email"].discoveryTrigger,

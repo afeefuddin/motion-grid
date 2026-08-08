@@ -33,13 +33,39 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify required runtime configuration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          test -n "$DATABASE_URL"
+          test -n "$ANTHROPIC_API_KEY"
+
+      - name: Apply committed database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm exec drizzle-kit migrate
+
       - name: Deploy production to Mastra
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_GENERATED_MARKET_MODEL: ${{ vars.OPENAI_GENERATED_MARKET_MODEL }}
           MASTRA_API_TOKEN: ${{ secrets.MASTRA_API_TOKEN }}
           MASTRA_ORG_ID: ${{ vars.MASTRA_ORG_ID }}
           MASTRA_PROJECT_ID: ${{ vars.MASTRA_PROJECT_ID }}
         run: |
           umask 077
-          printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > "$RUNNER_TEMP/mastra-production.env"
+          # Delivery secrets stay with the Next.js deployment; this runtime needs model access.
+          {
+            printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+            printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
+            if [ -n "$OPENAI_API_KEY" ]; then
+              printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
+            fi
+            if [ -n "$OPENAI_GENERATED_MARKET_MODEL" ]; then
+              printf 'OPENAI_GENERATED_MARKET_MODEL=%s\n' "$OPENAI_GENERATED_MARKET_MODEL"
+            fi
+          } > "$RUNNER_TEMP/mastra-production.env"
           pnpm run deploy:mastra -- --yes --env-file "$RUNNER_TEMP/mastra-production.env"

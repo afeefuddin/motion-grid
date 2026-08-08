@@ -21,7 +21,7 @@ Two constraints drive the structure:
 |---|---|---|
 | Stack | Next.js App Router + Mastra v1 + Postgres | Heavier setup than Bun/SQLite; scope trimmed accordingly |
 | LLM access | **Pure Mastra** model router | Anthropic-specific features (citations, task budgets, advisor tool, fast mode, mid-conversation tool changes, programmatic tool calling) are **out** — see *Evidence verification* below for the substitute |
-| Postgres | Self-hosted; Apple container locally | One shared DB, **one migration owner** (T0) |
+| Postgres | Self-hosted; Apple container locally | One shared DB, **one designated migration owner per schema amendment** |
 | Timeline | 1–2 days, 4–6 parallel agents | Creator is plan-only; allocation is deterministic, not agentic |
 
 ### Decisions taken after T3 (2026-08-08)
@@ -35,6 +35,14 @@ Two constraints drive the structure:
 | Mock UI layer | **Cut** | T9 builds once against real endpoints; one recorded-replay file is the only fixture |
 | Pre-T0 code | **Deleted** (`packages/domain\|database\|policy`, `apps/agent-runtime/**`) | Three competing sources of truth for types collapse to one |
 | Live integrations | **Relocated, not deleted** — `packages/integrations` → `src/adapters/live/` | Working Twilio + Resend adapters keep their proven logic and join the sim and generated adapters under one ownership path |
+
+### Current implementation status (2026-08-08)
+
+T11's source changes have landed: a campaign now proceeds from compile and planning into its
+selected motions, `business.online` shares the organization execution pipeline, and outbound
+drafts — not plans — are the human approval boundary. This is not release verification:
+`drizzle/0001_organic_ozymandias.sql` has not been applied to a configured deployment, and T10's
+runtime checks and rehearsals remain outstanding.
 
 ---
 
@@ -78,9 +86,9 @@ motions execute. What follows reflects that.
 | | In |
 |---|---|
 | **Decides** | Motion selection, capability selection, and **ranked adapter binding** with every candidate scored and every loser's reason recorded — plus **re-planning when the harness refuses** |
-| **Executes fully** | `business.local` — discover → evidence → qualify → contact → draft → **live send** → reply |
+| **Implemented execution paths** | `business.local` and `business.online` — discover → evidence → qualify → contact → draft → **message approval** → send → reply (runtime verification pending) |
 | **Plans + allocates** | `creator` — seeded index, scored, deterministic roster under budget |
-| **Declined on stage** | `consumer.ads`, `business.online`, `consumer.email` — registered motions the orchestrator visibly refuses, with reasons |
+| **Declined on stage** | `consumer.ads`, `consumer.email` — registered motions the orchestrator visibly refuses when the workspace lacks their required first-party source |
 | **Cross-motion** | Shared budget split, shared graph, discovered `mentions` edges → warm-intro badge |
 | **Cut for time** | Ledger screen, separate roster screen, follow-up waves, auth, multi-tenancy, **mock UI layer**, **`consumer.ads` execution** |
 
@@ -190,8 +198,8 @@ defineMotion('business.local', {
 | Motion | Target | Discovery | Allocation | Demo depth |
 |---|---|---|---|---|
 | `creator` | person | `db.query` creator index | **yes** | plan + roster |
-| `business.local` | organization | `geo.query` | no | **full execution** |
-| `business.online` | organization | `db.query` company index | no | registered, not run |
+| `business.local` | organization | `geo.query` | no | organization execution pipeline (runtime verification pending) |
+| `business.online` | organization | `db.query` company index | no | organization execution pipeline (runtime verification pending) |
 | `consumer.ads` | segment | `segment.build` | budget split | plan only |
 | `consumer.email` | person | trigger on customer base | no | registered, not run |
 
@@ -273,11 +281,11 @@ campaignWorkflow
   .then(compileObjectiveStep)        Opus-tier agent → CampaignSpec (structuredOutput)
   .then(planStep)                    orchestrator → motions, DECLINED motions,
                                      RANKED bindings, dual budget, policies
-  .then(approvalGate)                suspend() → resume on human approve
   .parallel([                        motion fan-out, failure isolated per motion
      businessLocalWorkflow,
+     businessOnlineWorkflow,
      creatorWorkflow,
-  ])                                 consumer.ads is declined at plan time, not run
+  ])                                 consumer motions are declined when their workspace source is absent
   .then(synthesizeStep)              edge discovery, dedup, rollup
   .commit()
 
@@ -285,7 +293,7 @@ campaignWorkflow
      → replan → re-rank under the new constraint → rebind → continue
      capped at two, then fail with a stated reason
 
-businessLocalWorkflow
+organizationWorkflow                 one workflow for business.local and business.online
   .then(discoverStep)                one call, not per-target
   .foreach(targetWorkflow, { concurrency: 8 })
   .commit()
@@ -468,7 +476,7 @@ precisely so it does not become five silent edits.
 | Task | Owns | Deliverable | Done when |
 |---|---|---|---|
 | **T5 · Orchestrator** | `src/orchestrator/**` | Motion selection with declines; capability narrowing; **model-weighted, deterministically-scored adapter ranking** keeping every loser with its reason; re-plan on binding failure or budget denial | Ranking is deterministic and unit-tested with zero model calls; a budget denial mid-run rebinds and continues; malformed weights rejected, not normalised |
-| **T6 · Workflows + evidence** | `src/mastra/workflows/**`, `src/evidence/**`, `src/mastra/index.ts` | `campaignWorkflow`, per-motion workflows, nested `targetWorkflow`; evidence step with **deterministic excerpt verification**; approval gate via `suspend`/`resume`; re-plan trigger and resumption | Full 60-target run completes against sim adapters with zero errors; every persisted signal passes verification; every capability call goes through `executeCapability` |
+| **T6 · Workflows + evidence** | `src/mastra/workflows/**`, `src/evidence/**`, `src/mastra/index.ts` | `campaignWorkflow`, generic organization workflows, nested `targetWorkflow`; evidence step with **deterministic excerpt verification**; message-level draft approval before send; re-plan trigger and continuation | Full 60-target run completes against sim adapters with zero errors; every persisted signal passes verification; every capability call goes through `executeCapability` |
 | **T7 · API, live delivery, webhooks** | `apps/web/app/api/**`, `apps/web/lib/**`, `src/adapters/live/**` | Route handlers, SSE stream, **adopt** the existing Twilio + Resend routes behind `message.send`, inbound webhook → reply classifier → `interaction` | One WhatsApp and one email actually deliver; inbound reply writes an `interaction`; orchestration events stream as decisions are made |
 | **T8 · Seed, generated market, synthesis** | `src/synthesis/**`, `src/adapters/generated/**`, `scripts/**` | Workspace seed; **cached runtime market synthesis** behind the sim contracts; deterministic `mentions` edge discovery; creator allocation (greedy under `commit_budget`, `audience_overlap` penalty) | `pnpm seed` idempotent; cache hits make zero model calls; edge discovery finds the seeded mentions with no false positives; allocation excludes over-rate creators with a stated reason |
 
@@ -481,6 +489,7 @@ fallback.
 
 **T10 · Rehearse** — seed, run end-to-end three times, then once with wifi off. Rehearse the
 budget-denial re-plan until it is boring. Record a screen capture as the ultimate fallback.
+This remains outstanding; implementation handoffs do not substitute for it.
 
 ---
 
@@ -488,8 +497,10 @@ budget-denial re-plan until it is boring. Record a screen capture as the ultimat
 
 - **Contracts are frozen after T0.** If a task needs a schema change, it stops and raises it
   rather than editing `src/contracts/` — a silent contract edit breaks every other agent.
-- **One migration owner.** Only T0 runs `drizzle-kit`. Wave 1+ agents assume the schema
-  exists.
+- **One designated migration owner per schema change.** T0, C2 when needed, and T11 own their
+  respective schema work. Runtime environments apply committed migrations with
+  `pnpm exec drizzle-kit migrate`; `db:push` is not a deployment step. T11 migration
+  `0001_organic_ozymandias.sql` remains pending application to a configured database.
 - **Mocks unblock, they don't ship.** T5 builds against mock data so it never waits on the
   backend; T9 removes the mocks.
 - **Each task ends with a handoff note** in `docs/tasks/T*.md`: what was built, contract
@@ -502,9 +513,10 @@ budget-denial re-plan until it is boring. Record a screen capture as the ultimat
 
 **Gives:** typed step I/O (which is our contract discipline, enforced by the framework),
 `.parallel()` for motion fan-out, `.foreach({concurrency})` for the target pipeline, nested
-workflows so each target completes independently, `suspend`/`resume` for the human approval
-gate, built-in memory, and traces/observability for free — the last is a genuine bonus-points
-item, since judges can see the whole agent graph.
+workflows so each target completes independently, built-in memory, and traces/observability for
+free — the last is a genuine bonus-points item, since judges can see the whole agent graph. The
+campaign workflow does not suspend for plan approval; approval is scoped to an outbound draft
+before it can be sent.
 
 **Costs:** the Anthropic-specific capability list is gone. Citations, task budgets, advisor
 tool, fast mode, mid-conversation tool changes and programmatic tool calling are all
@@ -532,7 +544,8 @@ Reweighted for the orchestration focus — the plan screen now carries the first
    mattered for *this* objective — that's its reasoning, one sentence — and then the ranking is
    deterministic. Every candidate, every score, why each loser lost. Same objective tomorrow,
    same ranking."
-4. **1:25** — Approve. The Grid fills with mixed-motion rows. Ticker climbs in two currencies.
+4. **1:25** — The selected motions begin immediately. The Grid fills with mixed-motion rows.
+   Ticker climbs in two currencies.
 5. **1:55** — **Drop the budget mid-run.** Policy denies, the orchestrator re-plans, the binding
    changes on screen, the run continues. "It got told no, and it reasoned its way to a different
    plan instead of throwing."
@@ -592,7 +605,8 @@ cache-miss path once.
   `draft_ready` with zero errors.
 - **Determinism**: same objective and seed, twice → identical target set and identical
   signals. Divergence means the sim leaks randomness and the second demo run embarrasses you.
-- **Budget**: operating cap $0.50 → run pauses with the policy reason surfaced.
+- **Budget**: operating cap $0.50 → policy refusal triggers a re-plan to a cheaper eligible
+  binding and the run continues with the change surfaced.
   `external_spend_commit` below a creator's rate → excluded from roster with a stated reason.
 - **Live send**: one WhatsApp and one email land; the reply webhook writes an `interaction`
   and the grid updates without a refresh.
@@ -601,8 +615,8 @@ cache-miss path once.
 
 ## Future scope
 
-**Near** — real discovery adapters (Outscraper, Apollo, Modash, Firecrawl); `business.online`
-and `consumer.email` execution; CRM write-back; auth and multi-tenancy; follow-up waves.
+**Near** — real discovery adapters (Outscraper, Apollo, Modash, Firecrawl); `consumer.email`
+execution; CRM write-back; auth and multi-tenancy; follow-up waves.
 
 **Mid** — Creator Motion past outreach: brief → contract → promo code → content approval →
 attribution → payment (needs a `collaboration` entity B2B doesn't have). Consumer execution

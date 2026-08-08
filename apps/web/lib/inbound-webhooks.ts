@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { InteractionSchema } from "../../../src/contracts";
 import type { z } from "zod";
 import type {
@@ -13,6 +13,7 @@ import {
   run,
   suppression,
   target,
+  toolCall,
 } from "../../../src/db/schema";
 import { runReplyClassifier } from "../../../src/mastra/agents/reply-classifier";
 import { publishSseEvent } from "./sse";
@@ -187,7 +188,7 @@ export async function ingestTwilioStatus(
 }
 
 function whatsappPhone(value: string) {
-  return value.trim().replace(/^whatsapp:/, "");
+  return value.trim().replace(/^whatsapp:/i, "");
 }
 
 /** Classifies and persists a verified WhatsApp reply, then publishes its grid event. */
@@ -203,17 +204,54 @@ export async function ingestTwilioReply(
   if (existing[0] !== undefined) {
     return InteractionSchema.parse(existing[0]);
   }
+  const senderAddress = whatsappPhone(webhook.From);
   const contacts = await db
     .select()
     .from(contact)
     .where(
       and(
         eq(contact.channel, "whatsapp"),
-        eq(contact.address, whatsappPhone(webhook.From)),
+        eq(contact.address, senderAddress),
       ),
     )
     .limit(1);
-  const matchedContact = contacts[0];
+  let matchedContact = contacts[0];
+  let matchedMessage: typeof message.$inferSelect | undefined;
+  let matchedOverrideRecipient = false;
+  const deliveryOverride = process.env.WHATSAPP_TO;
+  if (
+    matchedContact === undefined &&
+    deliveryOverride !== undefined &&
+    whatsappPhone(deliveryOverride).toLowerCase() === senderAddress.toLowerCase()
+  ) {
+    // Only a ledgered send proves that this override address received this message.
+    const overrideDeliveries = await db
+      .select({ matchedContact: contact, matchedMessage: message })
+      .from(toolCall)
+      .innerJoin(
+        message,
+        sql`${message.id}::text = ${toolCall.input} ->> 'messageId'`,
+      )
+      .innerJoin(contact, eq(contact.id, message.contactId))
+      .where(
+        and(
+          eq(toolCall.capabilityId, "message.send"),
+          eq(message.channel, "whatsapp"),
+          sql`${toolCall.input} ->> 'channel' = 'whatsapp'`,
+          sql`lower(trim(${toolCall.input} ->> 'to')) = ${deliveryOverride
+            .trim()
+            .toLowerCase()}`,
+        ),
+      )
+      .orderBy(desc(toolCall.createdAt))
+      .limit(1);
+    const overrideDelivery = overrideDeliveries[0];
+    if (overrideDelivery !== undefined) {
+      matchedContact = overrideDelivery.matchedContact;
+      matchedMessage = overrideDelivery.matchedMessage;
+      matchedOverrideRecipient = true;
+    }
+  }
   if (matchedContact === undefined) {
     throw new WebhookIngestionError(
       "contact_not_found",
@@ -221,13 +259,15 @@ export async function ingestTwilioReply(
       404,
     );
   }
-  const messages = await db
-    .select()
-    .from(message)
-    .where(eq(message.contactId, matchedContact.id))
-    .orderBy(desc(message.sentAt))
-    .limit(1);
-  const matchedMessage = messages[0];
+  if (matchedMessage === undefined) {
+    const messages = await db
+      .select()
+      .from(message)
+      .where(eq(message.contactId, matchedContact.id))
+      .orderBy(desc(message.sentAt))
+      .limit(1);
+    matchedMessage = messages[0];
+  }
   const classified = await runReplyClassifier({
     campaignId: matchedContact.campaignId,
     targetId: matchedContact.targetId,
@@ -276,7 +316,7 @@ export async function ingestTwilioReply(
         campaignId: matchedContact.campaignId,
         scope: "campaign",
         channel: "whatsapp",
-        address: matchedContact.address,
+        address: matchedOverrideRecipient ? senderAddress : matchedContact.address,
         reason: "Recipient opted out by WhatsApp reply.",
       })
       .onConflictDoNothing();

@@ -73,6 +73,7 @@ test("standalone runners validate fixture input and schema-bound output", async 
     geography: "Bengaluru",
     motions: ["business.local"],
     targetCriteria: ["salon", "no online booking"],
+    discoveryQuery: "salon & spa",
     budget,
     channels: ["whatsapp", "email"],
     successMetric: "Meetings booked",

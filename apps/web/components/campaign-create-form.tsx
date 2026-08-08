@@ -9,19 +9,12 @@ import { BrandMark } from "./brand-mark";
 import { readContractJson } from "./http";
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
-const defaultOperatingCeilingCents = 5_000;
-const defaultCommitCeilingPaise = 2_50_00_000;
 
 const suggestions = [
   "Find Bengaluru salons with weak online booking and build a qualified demo pipeline.",
   "Identify creator partners for our launch in Chennai and prepare evidence-backed outreach.",
   "Find high-fit local businesses showing recent demand and introduce us to decision makers.",
 ];
-
-function campaignName(objective: string) {
-  const sentence = objective.trim().replace(/[.!?]+$/, "");
-  return sentence.length <= 56 ? sentence : `${sentence.slice(0, 53).trim()}…`;
-}
 
 export function CampaignCreateForm() {
   const router = useRouter();
@@ -41,12 +34,7 @@ export function CampaignCreateForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workspaceId,
-          name: campaignName(message),
           objective: message,
-          budget: {
-            operating: { currency: "USD", amountMinor: defaultOperatingCeilingCents },
-            commit: { currency: "INR", amountMinor: defaultCommitCeilingPaise },
-          },
         }),
       });
       const created = CreateCampaignResponseSchema.parse(await readContractJson(response));
@@ -120,7 +108,7 @@ export function CampaignCreateForm() {
           </div>
         </form>
         {error && <p className="chat-error" role="alert">{error}</p>}
-        <p className="chat-assurance">You’ll review the plan before anything runs.</p>
+        <p className="chat-assurance">Nothing is sent without your approval.</p>
       </div>
     </section>
   );

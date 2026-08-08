@@ -3,21 +3,24 @@
 **Wave 4 · ~4h · single owner · backend only · T9 UI has landed**
 
 The UI already asks for exactly one thing: a plain-language objective
-(`apps/web/components/campaign-create-form.tsx`). The backend does not yet accept that. Three
-gaps stand between the current build and the product promise in `docs/PRODUCT.md`:
+(`apps/web/components/campaign-create-form.tsx`). This task closed three gaps between the
+original build and the product promise in `docs/PRODUCT.md`:
 
-1. **Autonomy is faked client-side.** The create form hardcodes `workspaceId`, derives the
-   campaign name with a `slice(0, 53)`, and ships two hardcoded budget constants
-   (`campaign-create-form.tsx:11,44-49`). The objective compiler already infers motions,
-   geography, criteria and channels from the prompt — the API just never lets it.
-2. **`business.online` is unreachable.** It is declined by a hardcoded `switch` in
-   `src/orchestrator/plan.ts:103`, has no workflow, and the target pipeline it would need is
+1. **Autonomy was faked client-side.** The create form hardcoded `workspaceId`, derived the
+   campaign name with a `slice(0, 53)`, and shipped two hardcoded budget constants
+   (`campaign-create-form.tsx:11,44-49`). The objective compiler already inferred motions,
+   geography, criteria and channels from the prompt, but the API did not pass them through.
+2. **`business.online` was unreachable.** It was declined by a hardcoded `switch` in
+   `src/orchestrator/plan.ts:103`, lacked a workflow, and needed a target pipeline that was
    welded to `business.local`.
-3. **Discovery ignores geography.** `discoverBusinessLocal` hardcodes Bengaluru's coordinates
+3. **Discovery ignored geography.** `discoverBusinessLocal` hardcoded Bengaluru's coordinates
    (`src/mastra/workflows/business-local.ts:386`). An objective naming Pune still searches
    Bengaluru.
 
-This task closes all three, plus two adjacent defects it would be dishonest to leave (§7, §8).
+It also addressed two adjacent defects (§7, §8). The source implementation has landed, but its
+operational acceptance remains pending: migration `0001_organic_ozymandias.sql` has not been
+applied to a configured database, and no end-to-end runtime check or T10 rehearsal is implied by
+this handoff.
 
 **Scope boundary:** backend only. Do not edit `apps/web/app/**` or `apps/web/components/**`.
 The UI changes this unblocks are listed at the end for the UI owner; they are not yours.
@@ -49,8 +52,9 @@ does not touch them.
 - **This is the second owned contract unfreeze**, after C2. Every change in §1 is additive or
   makes a required field optional; nothing already persisted becomes invalid. Contracts freeze
   again when this lands.
-- **One migration**, covering both new columns in §1. Generate it with `drizzle-kit generate`
-  and apply with `db:push`, exactly as T0 and C2 did.
+- **One migration**, covering both new columns in §1. `0001_organic_ozymandias.sql` was
+  generated but has not been applied here. Runtime environments apply committed migrations with
+  `pnpm exec drizzle-kit migrate`; `db:push` is only for disposable local schema work.
 - Land §1 → §2 → §3 → §4 together; they are interdependent. §5 through §8 are independent of
   each other and can land in any order after §4.
 
@@ -163,7 +167,7 @@ Discovery becomes motion-driven too:
 | Motion | Discovery | Observation |
 |---|---|---|
 | `business.local` | `geo.query` | `web.fetch`, `reviews.fetch` |
-| `business.online` | `db.query` (`entityKind: "company"`, `filters.category` and `filters.locality` from the spec) | `web.fetch` |
+| `business.online` | `db.query` (`entityKind: "company"`, `filters.category` and `filters.locality` from the spec) | `web.fetch`, `reviews.fetch` |
 
 Persist `motionId` on every target written by `saveTargets`.
 
@@ -226,20 +230,21 @@ ranking weights, which are rejected rather than normalised.
 
 ## 6. Remove the plan approval gate; keep the send gate
 
-Delete the `approvalGate` step (`composition.ts:261-313`). The run goes
+Remove the campaign-level `approvalGate` step. The run goes
 `compile → plan → parallel fan-out → synthesize`.
 
-The human gate that matters is already correct and stays: every draft lands as
-`pending_approval` (`business-local.ts:340-351`) behind
-`POST /api/messages/[id]/approve`. Nothing external happens without a person.
+The human gate that matters stays: every eligible outbound draft lands as `pending_approval`
+behind `POST /api/messages/[id]/approve`. The workflow creates approval records only for these
+message sends; it does not create or await a plan-level approval. Nothing external happens
+without a person approving that message.
 
 Consequent dead code to remove: `resumeCampaignWorkflow` (`apps/web/lib/workflows.ts:55`) and
 its call from `approveCampaign`. `requestPlanApproval` and `recordPlanDecision` leave the
 `CampaignWorkflowServices` interface.
 
-Leave `ApproveCampaignRequestSchema` and the campaign-approve route in place — they are still
-the shape for approvals that are not message-scoped, and removing them is a UI-visible change
-that belongs to the UI owner.
+The legacy campaign-approval schema and route may remain for compatibility, but no UI or caller
+may treat them as a way to advance a suspended campaign workflow. The approval queue represents
+outbound message sends only.
 
 ---
 
@@ -280,7 +285,9 @@ can be absent, the schema says so.
 
 ## Done when
 
-- [ ] One migration adds `target.motion_id` and `workspace.connected_sources`; `db:push` applies
+- [ ] `0001_organic_ozymandias.sql` adds `target.motion_id` and
+      `workspace.connected_sources` and applies with `pnpm exec drizzle-kit migrate` to the
+      configured database
 - [ ] `declineReason()` is gone; `business.online` plans and executes end to end from a prompt
       naming online companies
 - [ ] `consumer.ads` and `consumer.email` are **still declined**, now citing the unconnected
@@ -324,8 +331,9 @@ and emit `assessment.recorded` with the verified dropped-claim count. Geography 
 simulation filtering and generated-world identity, and sim/generated candidates now compete in
 the ranking pool.
 
-Migration `0001_organic_ozymandias.sql` adds both columns. It was generated successfully, but was
-not pushed from this workspace because `DATABASE_URL` was not configured; the next environment
-with a database connection must run `pnpm db:push`. The campaign approval route remains for the
-UI-visible non-message approval contract, but campaign workflow resumption is intentionally gone;
-message approval remains the outbound send gate.
+Migration `0001_organic_ozymandias.sql` adds both columns. It was generated successfully but has
+not been applied from this workspace because `DATABASE_URL` was not configured. The next
+configured environment must apply the committed migration with `pnpm exec drizzle-kit migrate`;
+no migration or runtime verification was run for this handoff. Campaign workflow resumption is
+intentionally gone: only outbound drafts create approval records, and message approval remains
+the send gate. The legacy campaign-approval route must not be presented as a workflow gate.

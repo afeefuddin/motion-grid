@@ -64,6 +64,7 @@ export const CampaignSpecSchema = z.object({
   geography: z.string().min(1),
   motions: z.array(MotionIdSchema).min(1),
   targetCriteria: z.array(z.string().min(1)).min(1),
+  discoveryQuery: z.string().trim().min(1).optional(),
   budget: CampaignBudgetSchema,
   channels: z.array(ChannelSchema),
   successMetric: z.string().min(1),

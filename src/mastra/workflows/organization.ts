@@ -3,6 +3,7 @@ import type { Adapter } from "../../capabilities/adapter";
 import { capabilityRegistry } from "../../capabilities/registry";
 import type { TargetCandidateSchema } from "../../contracts/capabilities";
 import type {
+  Approval,
   Contact,
   Message,
   Signal,
@@ -17,6 +18,7 @@ import {
   type SourceDocumentSchema,
 } from "../../contracts/steps";
 import type {
+  NewApproval,
   NewAssessment,
   NewContact,
   NewMessage,
@@ -59,6 +61,7 @@ export interface OrganizationStore {
   saveAssessment(assessment: NewAssessment): Promise<void>;
   saveContact(contact: NewContact): Promise<Contact>;
   saveMessage(message: NewMessage): Promise<Message>;
+  saveApproval(approval: NewApproval): Promise<Approval>;
   updateTarget(targetId: string, status: Target["status"]): Promise<void>;
 }
 
@@ -111,6 +114,16 @@ export type TargetResult = TargetSuccess | TargetFailure;
 
 function errorReason(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown target failure.";
+}
+
+/** Returns the narrow target-category query while preserving legacy specs. */
+export function organizationDiscoveryQuery(input: {
+  readonly discoveryQuery?: string;
+  readonly targetCriteria: readonly string[];
+  readonly goal: string;
+}): string {
+  // Legacy specs used their first criterion as the discovery category.
+  return input.discoveryQuery ?? input.targetCriteria[0] ?? input.goal;
 }
 
 function documentPrompt(documents: readonly SourceDocument[]): string {
@@ -377,7 +390,7 @@ export async function processOrganizationTarget(
       consentBasis: getMotion(motionId).consentPolicy,
       verified: true,
     });
-    await runtime.store.saveMessage({
+    const savedMessage = await runtime.store.saveMessage({
       campaignId: input.campaignId,
       targetId: input.target.id,
       contactId: savedContact.id,
@@ -387,6 +400,20 @@ export async function processOrganizationTarget(
       subject: draft.subject,
       body: draft.sentences.map((sentence) => sentence.text).join(" "),
       evidenceIds: draft.sentences.map((sentence) => sentence.evidenceId),
+    });
+    const pendingApproval = await runtime.store.saveApproval({
+      campaignId: input.campaignId,
+      runId: input.runId,
+      messageId: savedMessage.id,
+      decision: "require_approval",
+      status: "pending",
+      reason: policy.reason,
+    });
+    await runtime.events.emit({
+      type: "approval.required",
+      campaignId: input.campaignId,
+      runId: input.runId,
+      approval: pendingApproval,
     });
     await runtime.store.updateTarget(input.target.id, "pending_approval");
     runtime.replans.completeTarget(input.target.id);
@@ -425,13 +452,14 @@ export async function discoverOrganization(
     targetId: null,
   };
   const discoveryCapability = getMotion(motionId).discovery[0];
+  const query = organizationDiscoveryQuery(input.spec);
   let discovered: OrganizationDiscoveryResult;
   if (discoveryCapability === "geo.query") {
     discovered = await executePlannedCapability({
       capabilityId: "geo.query",
       capability: capabilityRegistry["geo.query"],
       input: {
-        query: input.spec.targetCriteria.join(" "),
+        query,
         locality: input.spec.geography,
         latitude: 0,
         longitude: 0,
@@ -451,7 +479,7 @@ export async function discoverOrganization(
       input: {
         entityKind: "company",
         filters: {
-          category: input.spec.targetCriteria[0],
+          category: query,
           locality: input.spec.geography,
         },
         limit: 60,

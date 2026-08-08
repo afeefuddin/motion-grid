@@ -56,6 +56,14 @@ export function personTarget(creator: Creator): TargetCandidate {
       handle: creator.handle,
       followerCount: creator.followers,
       rateCardCommitCents: creator.rateCard.reel.amountPaise,
+      profile: {
+        audienceGeography: creator.audience.geography,
+        audienceInterests: creator.audience.interests,
+        contentCategories: creator.contentCategories,
+        engagementRate: creator.engagementRate,
+        viewToFollowerRatio: creator.viewToFollowerRatio,
+        fakeFollowerEstimate: creator.fakeFollowerEstimate,
+      },
     },
   };
 }

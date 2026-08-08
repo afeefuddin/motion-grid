@@ -137,6 +137,17 @@ function streamWorkflowEvents(
         });
         return;
       }
+      if (event.type === "approval.required") {
+        await write({
+          id: randomUUID(),
+          runId: event.runId,
+          campaignId: event.campaignId,
+          occurredAt: new Date().toISOString(),
+          type: event.type,
+          data: { approval: event.approval },
+        });
+        return;
+      }
       if (event.type !== "replan_started") {
         return;
       }

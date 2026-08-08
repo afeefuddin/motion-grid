@@ -63,6 +63,7 @@ async function main(): Promise<void> {
       "Weak or absent online booking journey",
       "Reachable owner or manager",
     ],
+    discoveryQuery: "salon & spa",
     budget: {
       operating: { currency: "USD", amountMinor: 5_000 },
       commit: { currency: "INR", amountMinor: 2_50_00_000 },
@@ -139,6 +140,14 @@ async function main(): Promise<void> {
         handle: creator.handle,
         followerCount: creator.followers,
         rateCardCommitCents: creator.rateCard.reel.amountPaise,
+        profile: {
+          audienceGeography: creator.audience.geography,
+          audienceInterests: creator.audience.interests,
+          contentCategories: creator.contentCategories,
+          engagementRate: creator.engagementRate,
+          viewToFollowerRatio: creator.viewToFollowerRatio,
+          fakeFollowerEstimate: creator.fakeFollowerEstimate,
+        },
       },
     };
   }
