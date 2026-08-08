@@ -53,7 +53,6 @@ export class WhatsAppWebAdapter implements Adapter<"message.send"> {
     productionPath: "Hosted whatsapp-web.js service",
   };
   private readonly baseUrl: URL;
-  private readonly from: string;
   private readonly request: typeof fetch;
 
   constructor(private readonly config: WhatsAppWebConfig) {
@@ -83,36 +82,13 @@ export class WhatsAppWebAdapter implements Adapter<"message.send"> {
       );
     }
 
-    this.from = whatsappAddress(config.from);
     this.request = config.fetchImpl ?? globalThis.fetch;
   }
 
   async execute(
-    capabilityId: "message.send",
+    _capabilityId: "message.send",
     input: CapabilityInput<"message.send">,
   ): Promise<CapabilityOutput<"message.send">> {
-    if (capabilityId !== "message.send" || input.channel !== "whatsapp") {
-      throw new WhatsAppWebError(
-        "The WhatsApp Web adapter only supports message.send on WhatsApp.",
-        "unsupported_channel",
-        422,
-      );
-    }
-    if (input.subject !== null) {
-      throw new WhatsAppWebError(
-        "WhatsApp messages cannot have a subject.",
-        "invalid_subject",
-        422,
-      );
-    }
-    if (whatsappAddress(input.from) !== this.from) {
-      throw new WhatsAppWebError(
-        "The message sender does not match WHATSAPP_FROM.",
-        "invalid_sender",
-        422,
-      );
-    }
-
     try {
       const response = await this.request(new URL("/messages/send", this.baseUrl), {
         method: "POST",
@@ -120,7 +96,7 @@ export class WhatsAppWebAdapter implements Adapter<"message.send"> {
           Authorization: `Bearer ${this.config.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ to: whatsappAddress(input.to).slice(1), message: input.body }),
+        body: JSON.stringify({ to: input.to.replace(/\D/g, ""), message: input.body }),
         signal: AbortSignal.timeout(this.config.timeoutMs ?? 15_000),
       });
       const rawPayload: unknown = await response.json().catch(() => null);
@@ -162,8 +138,4 @@ export class WhatsAppWebAdapter implements Adapter<"message.send"> {
       );
     }
   }
-}
-
-function whatsappAddress(value: string) {
-  return value.trim().replace(/^whatsapp:/, "");
 }

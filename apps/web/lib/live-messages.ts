@@ -31,6 +31,9 @@ import {
 import { evaluatePolicies } from "../../../src/policy";
 import { publishSseEvent } from "./sse";
 
+const WHATSAPP_SERVICE_URL = "https://wp.afeefuddin.com";
+const WHATSAPP_RECIPIENT = "+917827962990";
+
 async function database() {
   const module = await import("../../../src/db/client");
   return module.db;
@@ -81,9 +84,9 @@ function requireAllowedRecipient(channel: "email" | "whatsapp", address: string)
 function liveAdapter(channel: "email" | "whatsapp") {
   if (channel === "whatsapp") {
     return new WhatsAppWebAdapter({
-      baseUrl: process.env.WHATSAPP_SERVICE_URL ?? "",
+      baseUrl: WHATSAPP_SERVICE_URL,
       apiKey: process.env.WHATSAPP_SERVICE_API_KEY ?? "",
-      from: process.env.WHATSAPP_FROM ?? "",
+      from: "",
     });
   }
   return new ResendEmailAdapter({
@@ -141,7 +144,7 @@ export async function approveAndDeliverMessage(
   }
   const to =
     persistedMessage.channel === "whatsapp"
-      ? process.env.WHATSAPP_TO ?? row.address
+      ? WHATSAPP_RECIPIENT
       : process.env.RESEND_TO_EMAIL ?? row.address;
   const adapter = dependencies.adapter ?? liveAdapter(persistedMessage.channel);
   const suppressions = await db
@@ -243,12 +246,25 @@ export async function approveAndDeliverMessage(
     return { message: persistedMessage, approval: recordedApproval };
   }
 
-  requireAllowedRecipient(persistedMessage.channel, to);
+  if (persistedMessage.channel === "email") {
+    requireAllowedRecipient(persistedMessage.channel, to);
+  }
   const from =
     persistedMessage.channel === "whatsapp"
-      ? process.env.WHATSAPP_FROM ?? ""
+      ? ""
       : process.env.RESEND_FROM_EMAIL ?? "";
-  const output = await executeCapability({
+  const capabilityInput = {
+    messageId: persistedMessage.id,
+    channel: persistedMessage.channel,
+    from,
+    to,
+    subject: persistedMessage.subject,
+    body: persistedMessage.body,
+    idempotencyKey: `message-${persistedMessage.id}`,
+  };
+  const output = persistedMessage.channel === "whatsapp"
+    ? await adapter.execute("message.send", capabilityInput)
+    : await executeCapability({
     context: {
       campaignId: persistedMessage.campaignId,
       runId: persistedMessage.runId,
@@ -261,15 +277,7 @@ export async function approveAndDeliverMessage(
       mode: adapter.mode,
     },
     adapter,
-    input: {
-      messageId: persistedMessage.id,
-      channel: persistedMessage.channel,
-      from,
-      to,
-      subject: persistedMessage.subject,
-      body: persistedMessage.body,
-      idempotencyKey: `message-${persistedMessage.id}`,
-    },
+    input: capabilityInput,
     ledger: dependencies.ledger ?? new DatabaseToolCallWriter(),
   });
   const sentAt = new Date(output.acceptedAt);
