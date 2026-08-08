@@ -179,5 +179,43 @@ not kill the campaign.
 
 ## Handoff note
 
-_(fill in — especially the suspend/resume contract T7 needs, the SSE events you emit, and what
-actually happened the first time `executeCapability` met a real adapter.)_
+Completed 2026-08-08.
+
+- `createDefaultCampaignWorkflow()` builds and `src/mastra/index.ts` registers
+  `campaignWorkflow`. Its input is `{ workspaceId, campaignId, runId, planId, workspaceName,
+  objective, budget }`. `plan-step` calls T5's `planCampaign`; contact enrichment that T5 marks
+  deferred is ranked and promoted to an approved `people.find` binding before the gate. The
+  fan-out contains only `business-local-workflow` and `creator-workflow`; declined motions,
+  including `consumer.ads`, remain in the plan shown for approval.
+- T7 resumes step ID `approval-gate` with
+  `{ approved: boolean, reviewerId: UUID }`. The suspend payload is
+  `{ reason, plan }`, where `plan` includes every ranked candidate, chosen binding, policy,
+  declined capability, and declined motion. Mastra's configured `PostgresStore` persists the
+  snapshot, so `campaignWorkflow.createRun({ runId }).resume(...)` can recover it after restart.
+- `business-local-workflow` makes one discovery call and feeds a committed nested
+  `target-workflow` to `.foreach(..., { concurrency: 8 })`. The complete target pipeline is one
+  failure boundary returning `{ ok: false, targetId, reason }`; creator is independently isolated
+  under `.parallel()`. Synthesis receives successful target IDs only.
+- Documentary verification lives in `src/evidence/verify.ts`. It matches excerpts only against
+  the document named by `sourceRef`, using lowercase/whitespace normalization, drops mismatches,
+  and persists retained documentary payloads with `verified: true`. Assessment serialization
+  accepts signals and `droppedCount` but has no source-document field, forming the evidence
+  firewall. Drafts are persisted with one evidence ID per generated sentence and remain
+  `pending_approval`.
+- T7 can pass a `WorkflowEventSink` to `createDefaultCampaignWorkflow(events)`. Re-planning emits
+  `replan_started`, `replan_completed`, or `replan_exhausted`; every event includes
+  `campaignId`, `runId`, `trigger`, `reason`, and one-based `attempt`. Binding refusals include
+  the capability and unavailable adapter when calling T5. Completed target IDs are carried as a
+  constraint, concurrent refusals share one in-flight re-plan, and attempt three returns the
+  stated limit reason.
+- The first real `executeCapability` integration exposed T2's pre-C2 adapter shape
+  (`adapterId/capability/execute(input)`). T6 normalizes those adapters once in
+  `sim-adapters.ts`; the geo proof then parsed both boundaries, returned the sim output, computed
+  record units, and awaited the ledger writer before the test could observe completion.
+- Verification completed with `pnpm typecheck`, production `pnpm build`, Biome on all T6-owned
+  paths, the zero-cast grep, and 41 non-database tests. Coverage includes the real sim
+  `geo.query` funnel, source-specific quote rejection, durable suspend/resume, failed-motion
+  isolation, binding-failure recovery, operating-budget re-planning, completed-target retention,
+  and the two-attempt cap. SQL-backed repository and 60-target persistence runs could not be
+  executed because `DATABASE_URL` is unset and the local Docker daemon is unavailable; the
+  repository-wide test command skipped only that pre-existing database suite.
