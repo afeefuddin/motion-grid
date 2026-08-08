@@ -55,6 +55,7 @@ export const replayCampaign = CampaignDetailResponseSchema.parse({
     { id: targetThree, campaignId, motionId: "business.local", kind: "organization", relationship: "prospect", status: "pending_approval", externalRef: "tvacha-clinic", name: "Tvacha Skin Clinic", payload: { address: "CMH Road, Indiranagar", locality: "Indiranagar", categories: ["Skin clinic"], websiteUrl: "https://example.com/tvacha", phone: "+919900000003" }, createdAt: now, updatedAt: now },
     { id: targetCreator, campaignId, motionId: "creator", kind: "person", relationship: "prospect_partner", status: "fit", externalRef: "creator-03", name: "Maya Rao", payload: { platform: "Instagram", handle: "@mayamakes", followerCount: 48200, rateCardCommitCents: 15000000 }, createdAt: now, updatedAt: now },
   ],
+  allocations: [],
   conversation: [
     { id: "70000000-0000-4000-8000-000000000001", campaignId, runId, role: "operator", status: "sent", content: "Find Bengaluru salons without reliable online booking, qualify them, and create a creator-assisted demo pipeline.", createdAt: now, updatedAt: now },
     { id: "70000000-0000-4000-8000-000000000002", campaignId, runId, role: "motiongrid", status: "completed", content: "I built the first campaign route. You can ask me to change the audience, motion mix, budget, evidence bar, or outreach constraints.", createdAt: now, updatedAt: now },

@@ -21,6 +21,7 @@ import {
 } from "../../contracts/steps";
 import type {
   NewApproval,
+  NewAllocation,
   NewAssessment,
   NewContact,
   NewMessage,
@@ -28,12 +29,8 @@ import type {
   NewTarget,
 } from "../../db/repositories";
 import { verifyEvidence } from "../../evidence";
-import {
-  assessmentRubric,
-  consentBasisByMotion,
-  getMotion,
-} from "../../motions";
-import type { MotionId, OrganizationMotionId } from "../../motions/types";
+import { consentBasisByMotion, getMotion } from "../../motions";
+import type { OrganizationMotionId } from "../../motions/types";
 import { evaluatePolicies } from "../../policy";
 import {
   selectReachableBusinesses,
@@ -63,6 +60,7 @@ type OrganizationDiscoveryResult =
 
 export interface OrganizationStore {
   saveTargets(targets: readonly NewTarget[]): Promise<readonly Target[]>;
+  saveAllocation(allocation: NewAllocation): Promise<void>;
   saveSignals(signals: readonly NewSignal[]): Promise<readonly Signal[]>;
   saveAssessment(assessment: NewAssessment): Promise<void>;
   saveContact(contact: NewContact): Promise<Contact>;
@@ -137,12 +135,28 @@ export function organizationDiscoveryQuery(input: {
   return input.discoveryQuery ?? input.targetCriteria[0] ?? input.goal;
 }
 
-function documentPrompt(documents: readonly SourceDocument[]): string {
-  return JSON.stringify({ documents });
+function documentPrompt(
+  spec: CampaignSpec,
+  documents: readonly SourceDocument[],
+): string {
+  return JSON.stringify({
+    campaignGoal: spec.goal,
+    targetCriteria: spec.targetCriteria,
+    documents,
+  });
+}
+
+function organizationQualificationRubric(spec: CampaignSpec): string[] {
+  return [
+    `campaign_fit: Source-grounded evidence shows that this organization could benefit from the campaign offer: ${spec.goal}`,
+    ...spec.targetCriteria.map(
+      (criterion) => `prospect_criterion: ${criterion}`,
+    ),
+  ];
 }
 
 function assessmentPrompt(
-  motionId: MotionId,
+  rubric: readonly string[],
   input: {
     readonly campaignId: string;
     readonly runId: string;
@@ -155,7 +169,7 @@ function assessmentPrompt(
   return JSON.stringify({
     ...input,
     signals: input.signals,
-    rubric: assessmentRubric(getMotion(motionId)),
+    rubric,
   });
 }
 
@@ -164,6 +178,8 @@ function draftPrompt(input: {
   readonly runId: string;
   readonly targetId: string;
   readonly workspaceName: string;
+  readonly campaignGoal: string;
+  readonly targetCriteria: readonly string[];
   readonly contact: {
     readonly name: string;
     readonly role: string;
@@ -255,7 +271,7 @@ export async function processOrganizationTarget(
     await runtime.store.updateTarget(input.target.id, "observed");
 
     const extracted = await runtime.agents.extract.generate(
-      documentPrompt(documents),
+      documentPrompt(input.spec, documents),
     );
     const extractedData = ExtractEvidenceDataSchema.parse(extracted.object);
     const verified = verifyEvidence(
@@ -268,8 +284,9 @@ export async function processOrganizationTarget(
       extractedData.signals,
     );
     const signals = await runtime.store.saveSignals(verified.signals);
+    const rubric = organizationQualificationRubric(input.spec);
     const assessed = await runtime.agents.assess.generate(
-      assessmentPrompt(motionId, {
+      assessmentPrompt(rubric, {
         campaignId: input.campaignId,
         runId: input.runId,
         targetId: input.target.id,
@@ -286,7 +303,7 @@ export async function processOrganizationTarget(
       isFit: assessment.isFit,
       reason: assessment.reason,
       droppedCount: verified.droppedCount,
-      rubric: assessmentRubric(getMotion(motionId)),
+      rubric,
     });
     await runtime.events.emit({
       type: "assessment.recorded",
@@ -359,6 +376,8 @@ export async function processOrganizationTarget(
         runId: input.runId,
         targetId: input.target.id,
         workspaceName: input.workspaceName,
+        campaignGoal: input.spec.goal,
+        targetCriteria: input.spec.targetCriteria,
         contact: person,
         channel,
         signals,
@@ -526,6 +545,7 @@ export async function discoverOrganization(
       );
       const selections = await selectReachableBusinesses(
         {
+          campaignGoal: input.spec.goal,
           geography: input.spec.geography,
           discoveryQuery: query,
           targetCriteria: input.spec.targetCriteria,
@@ -549,7 +569,8 @@ export async function discoverOrganization(
       });
     };
 
-    if (candidates.length < 10) {
+    let selected = await select(candidates);
+    if (selected.length < 10) {
       const generated = await executeCapability({
         context,
         capability: capabilityRegistry["geo.query"],
@@ -576,13 +597,14 @@ export async function discoverOrganization(
         ]),
       );
       candidates = [...merged.values()];
+      selected = await select(candidates);
     }
-    if (candidates.length < 10) {
+    if (selected.length === 0) {
       throw new Error(
-        `Location Finder has only ${candidates.length} available businesses; exactly 10 are required.`,
+        "Location Finder found no relevant prospective customers for this campaign.",
       );
     }
-    candidates = await select(candidates);
+    candidates = selected;
   }
   const targets = await runtime.store.saveTargets(
     candidates.map((target) => ({

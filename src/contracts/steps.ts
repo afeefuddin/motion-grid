@@ -190,15 +190,23 @@ export const CreatorShortlistInputSchema = z.object({
   candidates: z.array(CreatorShortlistCandidateSchema).min(1).max(100),
 });
 export const CreatorShortlistDataSchema = z.object({
-  selected: z
+  decisions: z
     .array(
       z.object({
         externalRef: z.string().min(1),
+        isFit: z.boolean(),
         relevanceScore: ConfidenceSchema,
         reason: z.string().min(1),
       }),
     )
-    .max(10),
+    .min(1)
+    .max(100)
+    .refine(
+      (decisions) =>
+        new Set(decisions.map((decision) => decision.externalRef)).size ===
+        decisions.length,
+      { message: "Creator qualification decisions must be unique." },
+    ),
 });
 export const CreatorShortlistOutputSchema = StepResult(
   CreatorShortlistDataSchema,
@@ -222,7 +230,7 @@ export const LocationFinderSelectionSchema = z.object({
 export const LocationFinderDataSchema = z.object({
   selections: z
     .array(LocationFinderSelectionSchema)
-    .length(10)
+    .max(10)
     .refine(
       (selections) =>
         new Set(selections.map((selection) => selection.externalRef)).size ===

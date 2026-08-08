@@ -132,6 +132,7 @@ test("selected motions run without plan approval and synthesis tolerates skipped
           async saveTargets() {
             return [];
           },
+          async saveAllocation() {},
           async saveSignals() {
             return [];
           },

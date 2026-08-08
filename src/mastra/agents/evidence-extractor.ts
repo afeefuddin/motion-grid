@@ -15,7 +15,8 @@ export const evidenceExtractor = new Agent({
   description:
     "Extracts source-grounded qualification signals from observed artifacts.",
   model: midAgentModel,
-  instructions: `Extract qualification signals from the supplied source documents.
+  instructions: `Extract qualification signals from the supplied source documents for the supplied campaign goal and prospective-customer criteria.
+Prioritize evidence that explains why the organization could need, buy, or benefit from the campaign's offer. Similarity to the seller or membership in the seller's own category is not evidence of customer fit.
 Every documentary excerpt must be copied verbatim from its source and must retain that sourceRef.
 Never paraphrase an excerpt and never create a fact that is absent from the documents.
 Set verified false because deterministic verification happens after extraction.

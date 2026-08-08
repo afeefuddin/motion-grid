@@ -16,6 +16,7 @@ export const assessor = new Agent({
     "Evaluates verified signals against a motion qualification rubric.",
   model: midAgentModel,
   instructions: `Assess target fit using only the supplied signals and rubric.
+Treat the rubric as prospective-customer criteria: a fit must be a plausible buyer of the campaign offer, not merely a business similar to the seller or one of its competitors.
 Do not request, infer from, or refer to raw pages or source documents.
 Missing evidence increases uncertainty and never contributes positive evidence.
 Account for droppedCount when setting confidence and explaining the result.

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   ApprovalSchema,
+  AllocationSchema,
   CampaignSchema,
   CampaignConversationMessageSchema,
   ObjectiveSchema,
@@ -19,6 +20,7 @@ import type {
 import { PlanDataSchema } from "../../../src/contracts/steps";
 import {
   approval,
+  allocation,
   campaign,
   campaignConversationMessage,
   interaction,
@@ -223,6 +225,11 @@ export async function campaignDetail(campaignId: string) {
     .from(target)
     .where(eq(target.campaignId, campaignId))
     .orderBy(asc(target.createdAt));
+  const allocations = await db
+    .select()
+    .from(allocation)
+    .where(eq(allocation.campaignId, campaignId))
+    .orderBy(desc(allocation.createdAt));
   const approvals = await db
     .select()
     .from(approval)
@@ -239,6 +246,7 @@ export async function campaignDetail(campaignId: string) {
     objective: ObjectiveSchema.parse(objectives[0]),
     plan: plans[0] === undefined ? null : PlanSchema.parse(plans[0]),
     targets: targets.map((row) => TargetSchema.parse(row)),
+    allocations: allocations.map((row) => AllocationSchema.parse(row)),
     approvals: approvals.map((row) => ApprovalSchema.parse(row)),
     conversation: conversation.map((row) =>
       CampaignConversationMessageSchema.parse(row),

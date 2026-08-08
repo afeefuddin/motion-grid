@@ -16,7 +16,7 @@ import {
   WebFetchOutputSchema,
   WebFetchUnitCostSchema,
 } from "../../contracts/capabilities";
-import { organizationTarget } from "../sim/shared";
+import { organizationTarget, personTarget } from "../sim/shared";
 import { generateWorldWithClaude } from "./model";
 import { GeneratedMarketStore } from "./store";
 
@@ -105,19 +105,21 @@ export function createGeneratedMarketAdapters(
         );
       }
       const input = DbQueryInputSchema.parse(rawInput);
-      if (input.entityKind === "creator") {
-        return DbQueryOutputSchema.parse({ targets: [] });
-      }
       const world = await store.worldFor({
         geography: input.filters.locality ?? "global",
-        category: input.filters.category ?? "company",
+        category:
+          input.filters.category ??
+          (input.entityKind === "creator" ? "creator" : "company"),
         limit: input.limit,
         seed: 20260808,
         latitude: 0,
         longitude: 0,
       });
       return DbQueryOutputSchema.parse({
-        targets: world.businesses.slice(0, input.limit).map(organizationTarget),
+        targets:
+          input.entityKind === "creator"
+            ? world.creators.slice(0, input.limit).map(personTarget)
+            : world.businesses.slice(0, input.limit).map(organizationTarget),
       });
     },
   };

@@ -769,6 +769,7 @@ add(contracts.CampaignDetailResponseSchema, {
   objective,
   plan,
   targets: [target],
+  allocations: [allocation],
   approvals: [approval],
   conversation: [conversationMessage],
 });

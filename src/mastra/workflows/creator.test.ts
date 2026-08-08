@@ -110,8 +110,9 @@ test("shortlist preserves Claude rank order and persisted creator profile tags",
   ];
   let suppliedCandidates = 0;
   const selector: StructuredAgent<{
-    selected: Array<{
+    decisions: Array<{
       externalRef: string;
+      isFit: boolean;
       relevanceScore: number;
       reason: string;
     }>;
@@ -121,16 +122,24 @@ test("shortlist preserves Claude rank order and persisted creator profile tags",
       suppliedCandidates = payload.candidates.length;
       return {
         object: {
-          selected: [
+          decisions: [
             {
               externalRef: "creator-3",
+              isFit: true,
               relevanceScore: 0.96,
               reason: "Beauty content matches the campaign.",
             },
             {
               externalRef: "creator-2",
+              isFit: true,
               relevanceScore: 0.91,
               reason: "Skincare content matches the campaign.",
+            },
+            {
+              externalRef: "creator-1",
+              isFit: false,
+              relevanceScore: 0.2,
+              reason: "Lifestyle content does not match the campaign.",
             },
           ],
         },
@@ -145,7 +154,7 @@ test("shortlist preserves Claude rank order and persisted creator profile tags",
   assert.equal(suppliedCandidates, candidates.length);
   assert.deepEqual(
     result.candidates.map((candidate) => candidate.externalRef),
-    ["creator-3", "creator-2"],
+    ["creator-3", "creator-2", "creator-1"],
   );
   assert.deepEqual(result.candidates[0]?.payload.profile?.contentCategories, [
     "beauty",
@@ -153,7 +162,7 @@ test("shortlist preserves Claude rank order and persisted creator profile tags",
   assert.equal(result.candidates[0]?.payload.selection?.relevanceScore, 0.96);
 });
 
-test("creator motion attaches only Claude's selected creators to the campaign", async () => {
+test("creator motion retains every examined creator and records qualification", async () => {
   const discovered = [
     creator("creator-1", "lifestyle"),
     creator("creator-2", "skincare"),
@@ -203,12 +212,11 @@ test("creator motion attaches only Claude's selected creators to the campaign", 
       async updateTarget(targetId: string) {
         updated.push(targetId);
       },
+      async saveAllocation() {},
       async saveSignals() {
         throw new Error("unused");
       },
-      async saveAssessment() {
-        throw new Error("unused");
-      },
+      async saveAssessment() {},
       async saveContact() {
         throw new Error("unused");
       },
@@ -224,16 +232,24 @@ test("creator motion attaches only Claude's selected creators to the campaign", 
         async generate() {
           return {
             object: {
-              selected: [
+              decisions: [
                 {
                   externalRef: "creator-3",
+                  isFit: true,
                   relevanceScore: 0.97,
                   reason: "Beauty tags match.",
                 },
                 {
                   externalRef: "creator-2",
+                  isFit: true,
                   relevanceScore: 0.92,
                   reason: "Skincare tags match.",
+                },
+                {
+                  externalRef: "creator-1",
+                  isFit: false,
+                  relevanceScore: 0.2,
+                  reason: "Lifestyle tags do not match.",
                 },
               ],
             },
@@ -256,7 +272,14 @@ test("creator motion attaches only Claude's selected creators to the campaign", 
         },
       },
     },
-    adapters: { geo: [], db: [adapter], web: [], reviews: [], people: [] },
+    adapters: {
+      geo: [],
+      generatedGeo: adapter as unknown as OrganizationRuntime["adapters"]["generatedGeo"],
+      db: [adapter],
+      web: [],
+      reviews: [],
+      people: [],
+    },
     ledger: { async record() {} },
     events: { async emit() {} },
     replans: new ReplanController({
@@ -275,7 +298,7 @@ test("creator motion attaches only Claude's selected creators to the campaign", 
 
   assert.deepEqual(queryInput, {
     entityKind: "creator",
-    filters: {},
+    filters: { locality: "Bengaluru" },
     limit: 100,
   });
   assert.equal(result.ok, true);
@@ -284,6 +307,7 @@ test("creator motion attaches only Claude's selected creators to the campaign", 
     [
       [campaignId, "creator-3"],
       [campaignId, "creator-2"],
+      [campaignId, "creator-1"],
     ],
   );
   assert.deepEqual(
@@ -292,6 +316,6 @@ test("creator motion attaches only Claude's selected creators to the campaign", 
       : undefined,
     ["beauty"],
   );
-  assert.equal(updated.length, 2);
-  assert.equal(result.targetIds.length, 2);
+  assert.equal(updated.length, 3);
+  assert.equal(result.targetIds.length, 3);
 });

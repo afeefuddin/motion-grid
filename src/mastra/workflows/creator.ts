@@ -3,6 +3,8 @@ import { capabilityRegistry } from "../../capabilities";
 import type { Adapter } from "../../capabilities/adapter";
 import type { TargetCandidateSchema } from "../../contracts/capabilities";
 import type { CreatorShortlistDataSchema } from "../../contracts/steps";
+import { assessmentRubric, getMotion } from "../../motions";
+import { allocateCreators } from "../../synthesis";
 import { runCreatorSelector } from "../agents/creator-selector";
 import type { StructuredAgent } from "../agents/runner";
 import type { OrganizationInput, OrganizationRuntime } from "./organization";
@@ -10,9 +12,9 @@ import { executePlannedCapability } from "./replan";
 
 type TargetCandidate = z.output<typeof TargetCandidateSchema>;
 type CreatorCandidate = Extract<TargetCandidate, { readonly kind: "person" }>;
-type CreatorSelection = z.output<
+type CreatorDecision = z.output<
   typeof CreatorShortlistDataSchema
->["selected"][number];
+>["decisions"][number];
 
 function creatorCandidates(candidates: readonly TargetCandidate[]) {
   return candidates.flatMap((candidate) =>
@@ -30,21 +32,27 @@ function creatorCandidates(candidates: readonly TargetCandidate[]) {
 
 function withSelection(
   candidate: Omit<CreatorCandidate, "kind">,
-  choice: CreatorSelection,
+  decision: CreatorDecision,
 ) {
+  const isFit =
+    decision.isFit && candidate.payload.rateCardCommitCents !== null;
   return {
     ...candidate,
     payload: {
       ...candidate.payload,
       selection: {
-        relevanceScore: choice.relevanceScore,
-        reason: choice.reason,
+        isFit,
+        relevanceScore: decision.relevanceScore,
+        reason:
+          decision.isFit && !isFit
+            ? `${decision.reason} Rejected because no usable rate card was supplied.`
+            : decision.reason,
       },
     },
   };
 }
 
-/** Selects up to ten creators and rejects references outside the supplied pool. */
+/** Qualifies every discovered creator and rejects incomplete selector output. */
 export async function shortlistCreators(
   input: OrganizationInput,
   candidates: readonly TargetCandidate[],
@@ -69,30 +77,38 @@ export async function shortlistCreators(
     people.map((candidate) => [candidate.externalRef, candidate]),
   );
   const seen = new Set<string>();
-  const selected = [];
+  const qualified = [];
 
-  for (const choice of result.data.selected) {
-    const candidate = available.get(choice.externalRef);
+  for (const decision of result.data.decisions) {
+    const candidate = available.get(decision.externalRef);
     if (candidate === undefined) {
       return {
         ok: false as const,
-        reason: `Creator selector returned an unknown candidate: ${choice.externalRef}.`,
+        reason: `Creator selector returned an unknown candidate: ${decision.externalRef}.`,
       };
     }
-    if (seen.has(choice.externalRef)) {
+    if (seen.has(decision.externalRef)) {
       return {
         ok: false as const,
-        reason: `Creator selector returned ${choice.externalRef} more than once.`,
+        reason: `Creator selector returned ${decision.externalRef} more than once.`,
       };
     }
-    seen.add(choice.externalRef);
-    selected.push(withSelection(candidate, choice));
+    seen.add(decision.externalRef);
+    qualified.push(withSelection(candidate, decision));
   }
 
-  return { ok: true as const, candidates: selected };
+  const missing = people.find((candidate) => !seen.has(candidate.externalRef));
+  if (missing !== undefined) {
+    return {
+      ok: false as const,
+      reason: `Creator selector omitted candidate ${missing.externalRef}.`,
+    };
+  }
+
+  return { ok: true as const, candidates: qualified };
 }
 
-/** Fetches the supported creator pool, ranks it with Claude, and attaches only the top ten. */
+/** Discovers, qualifies, persists, and allocates the complete creator pool. */
 export async function runCreatorMotion(
   input: OrganizationInput,
   runtime: OrganizationRuntime,
@@ -107,7 +123,7 @@ export async function runCreatorMotion(
     capability: capabilityRegistry["db.query"],
     input: {
       entityKind: "creator",
-      filters: {},
+      filters: { locality: input.spec.geography },
       limit: 100,
     },
     plan: input.plan,
@@ -142,9 +158,83 @@ export async function runCreatorMotion(
       relationship: "prospect_partner",
     })),
   );
+  const rubric = assessmentRubric(getMotion("creator"));
   await Promise.all(
-    targets.map((target) => runtime.store.updateTarget(target.id, "fit")),
+    targets.map(async (target) => {
+      if (target.kind !== "person" || target.payload.selection == null) {
+        throw new Error(`Creator target ${target.id} has no qualification decision.`);
+      }
+      const decision = target.payload.selection;
+      const isFit = decision.isFit === true;
+      await runtime.store.saveAssessment({
+        campaignId: input.campaignId,
+        runId: input.runId,
+        targetId: target.id,
+        score: decision.relevanceScore,
+        isFit,
+        reason: decision.reason,
+        droppedCount: 0,
+        rubric,
+      });
+      await runtime.store.updateTarget(
+        target.id,
+        isFit ? "fit" : "not_fit",
+      );
+      await runtime.events.emit({
+        type: "assessment.recorded",
+        campaignId: input.campaignId,
+        runId: input.runId,
+        targetId: target.id,
+        score: decision.relevanceScore,
+        isFit,
+        reason: decision.reason,
+        droppedCount: 0,
+      });
+    }),
   );
+
+  const creatorMotion = input.plan.motions.find(
+    (motion) => motion.motionId === "creator",
+  );
+  if (creatorMotion === undefined) {
+    return {
+      ok: false,
+      targetIds: targets.map((target) => target.id),
+      failures: ["Creator allocation has no planned motion budget."],
+    };
+  }
+  const allocation = allocateCreators({
+    creators: targets.flatMap((target) =>
+      target.kind === "person" &&
+      target.payload.selection?.isFit === true &&
+      target.payload.rateCardCommitCents !== null
+        ? [
+            {
+              targetId: target.id,
+              name: target.name,
+              fitScore: target.payload.selection.relevanceScore,
+              ratePaise: target.payload.rateCardCommitCents,
+            },
+          ]
+        : [],
+    ),
+    audienceOverlaps: [],
+    commitBudgetPaise: creatorMotion.commitBudgetCents,
+    maxPerDealPaise: creatorMotion.commitBudgetCents,
+  });
+  await Promise.all(
+    allocation.decisions.map((decision) =>
+      runtime.store.saveAllocation({
+        campaignId: input.campaignId,
+        targetId: decision.targetId,
+        motionId: "creator",
+        commitCents: decision.pricePaise,
+        selected: decision.selected,
+        reason: `${decision.reason} Effective fit ${decision.effectiveFitScore.toFixed(2)}; overlap penalty ${Math.round(decision.overlapPenalty * 100)}%.`,
+      }),
+    ),
+  );
+
   targets.forEach((target) => {
     runtime.replans.completeTarget(target.id);
   });

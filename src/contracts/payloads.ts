@@ -36,6 +36,7 @@ export const PersonTargetPayloadSchema = z.object({
   profile: CreatorProfileSnapshotSchema.optional(),
   selection: z
     .object({
+      isFit: z.boolean().optional(),
       relevanceScore: ConfidenceSchema,
       reason: z.string().min(1),
     })

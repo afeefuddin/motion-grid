@@ -17,6 +17,7 @@ import { PlanDataSchema } from "../../contracts";
 import { db } from "../../db/client";
 import {
   assessmentRepo,
+  allocationRepo,
   approvalRepo,
   campaignConversationMessageRepo,
   campaignRepo,
@@ -68,6 +69,9 @@ const repositoryStore = {
     targetRepo.bulkUpsert([...targets]),
   saveSignals: (signals: Parameters<typeof signalRepo.bulkCreate>[0]) =>
     signalRepo.bulkCreate([...signals]),
+  async saveAllocation(allocation: Parameters<typeof allocationRepo.create>[0]) {
+    await allocationRepo.create(allocation);
+  },
   async saveAssessment(
     assessment: Parameters<typeof assessmentRepo.create>[0],
   ) {
@@ -262,6 +266,7 @@ export function createDefaultWorkflowServices(
     async runCreator(input) {
       return runCreatorMotion(input, this.businessRuntime(input), [
         dbSimAdapter,
+        generatedMarketDbAdapter,
       ]);
     },
     async synthesize(input) {

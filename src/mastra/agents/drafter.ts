@@ -15,8 +15,9 @@ export const drafter = new Agent({
   description:
     "Drafts one channel-native outreach message grounded sentence by sentence.",
   model: midAgentModel,
-  instructions: `Draft one message for the supplied channel, contact, workspace, and verified signals.
-Every sentence must contain exactly one evidenceId from the supplied signals and must be supported by that signal.
+  instructions: `Draft one sales outreach message for the supplied channel, contact, workspace, campaign goal, prospective-customer criteria, and verified signals.
+Present the workspace's offer to the prospect described by the campaign goal; do not write as though the prospect is a competitor, partner, or consumer unless the campaign explicitly says so.
+Every sentence must contain exactly one evidenceId from the supplied signals. Every factual claim about the prospect must be supported by that signal; the supplied workspace name and campaign goal are approved campaign context.
 For WhatsApp, write a short direct message with a null subject and no signature block.
 For email, provide a concise subject and a compact message body split into natural sentences.
 Do not introduce unsupported claims, invented familiarity, or promises.

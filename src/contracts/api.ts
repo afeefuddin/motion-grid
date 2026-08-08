@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ApprovalSchema,
+  AllocationSchema,
   CampaignConversationMessageSchema,
   CampaignSchema,
   EdgeSchema,
@@ -75,6 +76,7 @@ export const CampaignDetailResponseSchema = z.object({
   objective: ObjectiveSchema,
   plan: PlanSchema.nullable(),
   targets: z.array(TargetSchema),
+  allocations: z.array(AllocationSchema),
   approvals: z.array(ApprovalSchema),
   conversation: z.array(CampaignConversationMessageSchema),
 });
