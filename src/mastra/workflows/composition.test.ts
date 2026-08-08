@@ -70,6 +70,7 @@ const plan: PlanData = {
     },
   ],
   policies: [],
+  suggestedActions: [],
   budget: spec.budget,
   declinedMotions: [
     { motionId: "consumer.ads", reason: "No first-party data source." },
