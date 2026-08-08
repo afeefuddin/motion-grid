@@ -13,7 +13,8 @@
     "sim:generate": "tsx src/sim/generate.ts",
     "sim:test": "tsx src/adapters/sim/adapters.test.ts",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "deploy:mastra": "pnpm dlx mastra@1.23.0 deploy --env production --region iad"
   },
   "engines": {
     "node": ">=22"
