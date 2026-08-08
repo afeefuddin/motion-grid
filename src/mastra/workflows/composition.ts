@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import {
+  ApprovalSchema,
   CampaignSpecSchema,
   CompileObjectiveInputSchema,
   PlanDataSchema,
@@ -12,6 +14,7 @@ import {
   discoverBusinessLocal,
   processBusinessLocalTarget,
 } from "./business-local";
+import type { WorkflowEventSink } from "./replan";
 
 const CampaignWorkflowInputSchema = CompileObjectiveInputSchema.extend({
   runId: z.uuid(),
@@ -55,10 +58,14 @@ export interface CampaignWorkflowServices {
   ): Promise<z.output<typeof CampaignSpecSchema>>;
   planCampaign(input: {
     readonly campaignId: string;
+    readonly runId: string;
     readonly planId: string;
     readonly spec: z.output<typeof CampaignSpecSchema>;
   }): Promise<z.output<typeof PlanDataSchema>>;
-  businessRuntime(input: PlannedCampaign): BusinessLocalRuntime;
+  businessRuntime(
+    input: PlannedCampaign,
+    events?: WorkflowEventSink,
+  ): BusinessLocalRuntime;
   runCreator(input: PlannedCampaign): Promise<{
     readonly ok: boolean;
     readonly targetIds: readonly string[];
@@ -71,6 +78,10 @@ export interface CampaignWorkflowServices {
     readonly approved: boolean;
     readonly reviewerId: string;
   }): Promise<void>;
+  requestPlanApproval(input: {
+    readonly campaignId: string;
+    readonly runId: string;
+  }): Promise<z.output<typeof ApprovalSchema>>;
   synthesize(input: {
     readonly campaignId: string;
     readonly runId: string;
@@ -82,19 +93,52 @@ function reason(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown motion failure.";
 }
 
+function streamReplanEvents(
+  input: PlannedCampaign,
+  write: (value: unknown) => Promise<void>,
+): WorkflowEventSink {
+  return {
+    async emit(event) {
+      if (event.type !== "replan_started") {
+        return;
+      }
+      await write({
+        id: randomUUID(),
+        runId: input.runId,
+        campaignId: input.campaignId,
+        occurredAt: new Date().toISOString(),
+        type: "replan_started",
+        data: {
+          planId: input.planId,
+          trigger: event.trigger,
+          reason: event.reason,
+        },
+      });
+    },
+  };
+}
+
 /** Creates the independently resumable target workflow used by business.local foreach. */
 export function createTargetWorkflow(
-  runtimeFor: (input: PlannedCampaign) => BusinessLocalRuntime,
+  runtimeFor: (
+    input: PlannedCampaign,
+    events?: WorkflowEventSink,
+  ) => BusinessLocalRuntime,
 ) {
   const targetStep = createStep({
     id: "target-pipeline",
     inputSchema: TargetJobSchema,
     outputSchema: TargetResultSchema,
-    execute: ({ inputData }) =>
-      processBusinessLocalTarget(
+    execute: ({ inputData, writer }) => {
+      const planned = PlannedCampaignSchema.parse(inputData);
+      return processBusinessLocalTarget(
         inputData,
-        runtimeFor(PlannedCampaignSchema.parse(inputData)),
-      ),
+        runtimeFor(
+          planned,
+          streamReplanEvents(planned, (value) => writer.write(value)),
+        ),
+      );
+    },
   });
 
   return createWorkflow({
@@ -108,16 +152,22 @@ export function createTargetWorkflow(
 
 /** Creates business.local with one discovery followed by nested per-target workflows. */
 export function createBusinessLocalWorkflow(
-  runtimeFor: (input: PlannedCampaign) => BusinessLocalRuntime,
+  runtimeFor: (
+    input: PlannedCampaign,
+    events?: WorkflowEventSink,
+  ) => BusinessLocalRuntime,
 ) {
   const discoverStep = createStep({
     id: "discover-step",
     inputSchema: PlannedCampaignSchema,
     outputSchema: z.array(TargetJobSchema),
-    execute: async ({ inputData }) => {
+    execute: async ({ inputData, writer }) => {
       const result = await discoverBusinessLocal(
         inputData,
-        runtimeFor(inputData),
+        runtimeFor(
+          inputData,
+          streamReplanEvents(inputData, (value) => writer.write(value)),
+        ),
       );
       if (!result.ok) {
         return [];
@@ -158,25 +208,70 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
     id: "plan-step",
     inputSchema: CampaignContextSchema,
     outputSchema: PlannedCampaignSchema,
-    execute: async ({ inputData }) => ({
-      ...inputData,
-      plan: await services.planCampaign({
+    execute: async ({ inputData, writer }) => {
+      const plan = await services.planCampaign({
         campaignId: inputData.campaignId,
+        runId: inputData.runId,
         planId: inputData.planId,
         spec: inputData.spec,
-      }),
-    }),
+      });
+      const envelope = () => ({
+        id: randomUUID(),
+        runId: inputData.runId,
+        campaignId: inputData.campaignId,
+        occurredAt: new Date().toISOString(),
+      });
+      for (const declined of plan.declinedMotions) {
+        await writer.write({
+          ...envelope(),
+          type: "motion_declined",
+          data: declined,
+        });
+      }
+      for (const motion of plan.motions) {
+        await writer.write({
+          ...envelope(),
+          type: "motion_selected",
+          data: { motionId: motion.motionId, rationale: motion.rationale },
+        });
+        for (const binding of motion.bindings) {
+          await writer.write({
+            ...envelope(),
+            type: "capability_ranked",
+            data: {
+              capabilityId: binding.capabilityId,
+              weights: binding.weights,
+              weightsRationale: binding.weightsRationale,
+              candidates: binding.candidates,
+            },
+          });
+          await writer.write({
+            ...envelope(),
+            type: "binding_chosen",
+            data: {
+              capabilityId: binding.capabilityId,
+              chosen: binding.chosen,
+            },
+          });
+        }
+      }
+      return { ...inputData, plan };
+    },
   });
   const approvalGate = createStep({
     id: "approval-gate",
     inputSchema: PlannedCampaignSchema,
     outputSchema: PlannedCampaignSchema,
-    resumeSchema: z.object({ approved: z.boolean(), reviewerId: z.uuid() }),
+    resumeSchema: z.object({
+      approved: z.boolean(),
+      reviewerId: z.string().min(1),
+    }),
     suspendSchema: z.object({
       reason: z.string(),
       plan: PlanDataSchema,
+      approval: ApprovalSchema,
     }),
-    execute: async ({ inputData, resumeData, suspend, bail }) => {
+    execute: async ({ inputData, resumeData, suspend, bail, writer }) => {
       if (resumeData?.approved === false) {
         await services.recordPlanDecision({
           campaignId: inputData.campaignId,
@@ -188,9 +283,22 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
         return bail({ reason: "The campaign plan was rejected." });
       }
       if (resumeData?.approved !== true) {
+        const approval = await services.requestPlanApproval({
+          campaignId: inputData.campaignId,
+          runId: inputData.runId,
+        });
+        await writer.write({
+          id: randomUUID(),
+          runId: inputData.runId,
+          campaignId: inputData.campaignId,
+          occurredAt: new Date().toISOString(),
+          type: "approval.required",
+          data: { approval },
+        });
         return suspend({
           reason: "Approve the ranked bindings and declined motions.",
           plan: inputData.plan,
+          approval,
         });
       }
       await services.recordPlanDecision({

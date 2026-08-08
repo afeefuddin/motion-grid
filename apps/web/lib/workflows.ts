@@ -1,5 +1,8 @@
 import { mastraClient } from "./mastra-client";
-import { SseEventSchema } from "../../../src/contracts/api";
+import {
+  SseEventSchema,
+  type SseEvent,
+} from "../../../src/contracts/api";
 import { publishSseEvent } from "./sse";
 
 const CAMPAIGN_WORKFLOW_ID = "campaignWorkflow";
@@ -20,12 +23,32 @@ async function forwardWorkflowEvents(
   stream: ReadableStream<{ payload: unknown }>,
 ) {
   for await (const chunk of stream) {
-    const event = SseEventSchema.safeParse(chunk.payload);
-    if (event.success) {
+    const event = extractWorkflowEvent(chunk.payload);
+    if (event !== null) {
       // Publishing here preserves the orchestrator's decision order for the plan UI.
-      publishSseEvent(event.data);
+      publishSseEvent(event);
     }
   }
+}
+
+function extractWorkflowEvent(value: unknown): SseEvent | null {
+  const direct = SseEventSchema.safeParse(value);
+  if (direct.success) {
+    return direct.data;
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  if ("output" in value) {
+    const output: SseEvent | null = extractWorkflowEvent(value.output);
+    if (output !== null) {
+      return output;
+    }
+  }
+  if ("payload" in value) {
+    return extractWorkflowEvent(value.payload);
+  }
+  return null;
 }
 
 /** Resumes the campaign approval suspension with the user's decision. */
@@ -37,6 +60,7 @@ export async function resumeCampaignWorkflow(
   const workflow = mastraClient.getWorkflow(CAMPAIGN_WORKFLOW_ID);
   const run = await workflow.createRun({ runId });
   return run.resume({
-    resumeData: { approved, decidedBy },
+    step: "approval-gate",
+    resumeData: { approved, reviewerId: decidedBy },
   });
 }

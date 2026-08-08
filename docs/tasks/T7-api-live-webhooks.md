@@ -157,14 +157,14 @@ This is demo beat 7. It must work without a page refresh.
 - [ ] One WhatsApp message actually delivers to the demo phone
 - [ ] One email actually delivers
 - [ ] Inbound reply writes an `interaction` and the SSE stream reflects it without a refresh
-- [ ] Every send goes through `executeCapability` and the policy gate; a denied send never hits
+- [x] Every send goes through `executeCapability` and the policy gate; a denied send never hits
       the network
 - [ ] The inherited allowlists and signature verification still work after the refactor
-- [ ] SSE events match `contracts/api.ts` exactly, including C2's orchestration events
-- [ ] Orchestration events stream as decisions are made, not batched at the end
-- [ ] Live adapters declare an honest `profile` so T5's ranker can weigh them
-- [ ] `grep -rn " as \| any" apps/web/app/api apps/web/lib src/adapters/live` returns nothing
-- [ ] Handoff note written
+- [x] SSE events match `contracts/api.ts` exactly, including C2's orchestration events
+- [x] Orchestration events stream as decisions are made, not batched at the end
+- [x] Live adapters declare an honest `profile` so T5's ranker can weigh them
+- [x] `grep -rn " as \| any" apps/web/app/api apps/web/lib src/adapters/live` returns nothing
+- [x] Handoff note written
 
 ---
 
@@ -174,11 +174,13 @@ Completed in code on 2026-08-08.
 
 - Added the frozen-contract campaign API surface: create/list/detail, campaign approval and run
   start. The route layer only parses request contracts, delegates, and maps errors. The Mastra
-  bridge targets `campaignWorkflow`, uses the persisted UUID as its run ID, resumes with
-  `{ approved, decidedBy }`, and forwards any exact `SseEventSchema` value emitted in a workflow
-  stream chunk's `payload` immediately. T6 was not present in this worktree, so this bridge is the
-  explicit integration contract: workflow chunks that drive the UI must put the complete frozen
-  SSE event envelope in `payload`.
+  bridge targets `campaignWorkflow`, supplies the complete T6 workflow input, uses the persisted
+  run UUID as its Mastra run ID, resumes `approval-gate` with
+  `{ approved, reviewerId: decidedBy }`, and forwards exact `SseEventSchema` values from direct or
+  nested workflow stream payloads immediately.
+- The integration pass persists a pending plan approval before suspension, links the run to the
+  plan, and streams motion selection, declines, capability rankings, chosen bindings, approval,
+  and `replan_started` events through Mastra's step writer in decision order.
 - Added `/api/stream/:runId` with exact schema validation, in-process ordered replay (up to 500
   events), `Last-Event-ID` continuation, 15-second heartbeats, `Cache-Control: no-store`,
   `Connection: keep-alive`, and proxy buffering disabled. T9 should open one `EventSource` per run

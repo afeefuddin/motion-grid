@@ -89,7 +89,7 @@ export class ReplanController {
   readonly #campaignId: string;
   readonly #runId: string;
   readonly #replanner: Replanner;
-  readonly #events: WorkflowEventSink;
+  #events: WorkflowEventSink;
   readonly #completedTargetIds = new Set<string>();
   #attempts = 0;
   #currentPlan: PlanData | null = null;
@@ -109,6 +109,10 @@ export class ReplanController {
 
   get attempts(): number {
     return this.#attempts;
+  }
+
+  setEvents(events: WorkflowEventSink): void {
+    this.#events = events;
   }
 
   completeTarget(targetId: string): void {

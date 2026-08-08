@@ -7,6 +7,7 @@ import {
   contactRepo,
   messageRepo,
   planRepo,
+  runRepo,
   signalRepo,
   targetRepo,
   toolCallRepo,
@@ -171,11 +172,13 @@ export function createDefaultWorkflowServices(
           dependsOn: motion.dependsOn,
         })),
       );
+      await runRepo.attachPlan(input.runId, input.planId);
       return planned;
     },
-    businessRuntime(input) {
+    businessRuntime(input, runtimeEvents = events) {
       const existing = runtimes.get(input.runId);
       if (existing !== undefined) {
+        existing.replans.setEvents(runtimeEvents);
         return existing;
       }
       const runtime = {
@@ -195,7 +198,7 @@ export function createDefaultWorkflowServices(
         replans: new ReplanController({
           campaignId: input.campaignId,
           runId: input.runId,
-          events,
+          events: runtimeEvents,
           replanner: createOrchestratorReplanner({
             replacedPlanId: input.planId,
             spec: input.spec,
@@ -212,26 +215,27 @@ export function createDefaultWorkflowServices(
       ]);
     },
     async recordPlanDecision(input) {
-      const decidedAt = new Date();
-      await approvalRepo.create({
-        campaignId: input.campaignId,
-        runId: input.runId,
-        messageId: null,
-        decision: input.approved ? "allow" : "deny",
-        status: input.approved ? "approved" : "rejected",
-        reason: input.approved
-          ? "The ranked campaign plan was approved."
-          : "The ranked campaign plan was rejected.",
-        requestedAt: decidedAt,
-        decidedAt,
-        decidedBy: input.reviewerId,
-      });
       if (input.approved) {
         await planRepo.approve(input.planId);
         await campaignRepo.updateStatus(input.campaignId, "approved");
       } else {
         await campaignRepo.updateStatus(input.campaignId, "failed");
       }
+    },
+    async requestPlanApproval(input) {
+      const requested = await approvalRepo.create({
+        campaignId: input.campaignId,
+        runId: input.runId,
+        messageId: null,
+        decision: "require_approval",
+        status: "pending",
+        reason: "Approve the ranked bindings and declined motions.",
+        requestedAt: new Date(),
+        decidedAt: null,
+        decidedBy: null,
+      });
+      await campaignRepo.updateStatus(input.campaignId, "pending_approval");
+      return requested;
     },
     async synthesize(input) {
       const result = await synthesizeStep(input);

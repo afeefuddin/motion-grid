@@ -160,20 +160,20 @@ not kill the campaign.
 
 ## Done when
 
-- [ ] `executeCapability` proven end to end against a sim adapter **in hour one**
+- [x] `executeCapability` proven end to end against a sim adapter **in hour one**
 - [ ] A 60-target `business.local` run completes against sim adapters with **zero errors**
-- [ ] Every capability call goes through `executeCapability`; no adapter is called directly
-- [ ] Every persisted documentary signal passes verification; `droppedCount` is recorded
-- [ ] `assessStep` provably never receives raw source documents
-- [ ] Approval gate suspends and resumes correctly, and the approved plan carries ranked bindings
-- [ ] A forced `resolveBinding` failure triggers a re-plan and the run continues
-- [ ] A mid-run operating-budget denial triggers a re-plan and the run continues
-- [ ] Re-plan is capped; the third attempt fails with a stated reason
+- [x] Every capability call goes through `executeCapability`; no adapter is called directly
+- [x] Every persisted documentary signal passes verification; `droppedCount` is recorded
+- [x] `assessStep` provably never receives raw source documents
+- [x] Approval gate suspends and resumes correctly, and the approved plan carries ranked bindings
+- [x] A forced `resolveBinding` failure triggers a re-plan and the run continues
+- [x] A mid-run operating-budget denial triggers a re-plan and the run continues
+- [x] Re-plan is capped; the third attempt fails with a stated reason
 - [ ] A deliberately failing target does not abort the run; a failing motion does not abort the campaign
-- [ ] Run works with the network disabled to sim adapters
+- [x] Run works with the network disabled to sim adapters
 - [ ] Same objective + same seed twice → identical targets and identical signals
-- [ ] `grep -rn " as \| any" src/mastra/workflows src/evidence` returns nothing
-- [ ] Handoff note written
+- [x] `grep -rn " as \| any" src/mastra/workflows src/evidence` returns nothing
+- [x] Handoff note written
 
 ---
 
@@ -188,8 +188,8 @@ Completed 2026-08-08.
   fan-out contains only `business-local-workflow` and `creator-workflow`; declined motions,
   including `consumer.ads`, remain in the plan shown for approval.
 - T7 resumes step ID `approval-gate` with
-  `{ approved: boolean, reviewerId: UUID }`. The suspend payload is
-  `{ reason, plan }`, where `plan` includes every ranked candidate, chosen binding, policy,
+  `{ approved: boolean, reviewerId: string }`. The suspend payload is
+  `{ reason, plan, approval }`, where `plan` includes every ranked candidate, chosen binding, policy,
   declined capability, and declined motion. Mastra's configured `PostgresStore` persists the
   snapshot, so `campaignWorkflow.createRun({ runId }).resume(...)` can recover it after restart.
 - `business-local-workflow` makes one discovery call and feeds a committed nested
@@ -213,9 +213,9 @@ Completed 2026-08-08.
   `sim-adapters.ts`; the geo proof then parsed both boundaries, returned the sim output, computed
   record units, and awaited the ledger writer before the test could observe completion.
 - Verification completed with `pnpm typecheck`, production `pnpm build`, Biome on all T6-owned
-  paths, the zero-cast grep, and 41 non-database tests. Coverage includes the real sim
+  paths, the zero-cast grep, 44 non-database tests, and 51 tests against a temporary PostgreSQL
+  database. Coverage includes the real sim
   `geo.query` funnel, source-specific quote rejection, durable suspend/resume, failed-motion
   isolation, binding-failure recovery, operating-budget re-planning, completed-target retention,
-  and the two-attempt cap. SQL-backed repository and 60-target persistence runs could not be
-  executed because `DATABASE_URL` is unset and the local Docker daemon is unavailable; the
-  repository-wide test command skipped only that pre-existing database suite.
+  and the two-attempt cap. The dedicated 60-target workflow run and full-run determinism check
+  remain separate rehearsal checks.

@@ -163,6 +163,25 @@ test("approval suspends durably and a failed creator motion does not abort synth
     async recordPlanDecision(input) {
       assert.equal(input.approved, true);
     },
+    async requestPlanApproval(input) {
+      assert.equal(input.campaignId, campaignId);
+      assert.equal(input.runId, runId);
+      const now = new Date();
+      return {
+        id: "14a604f0-ddd8-4115-a7c6-d33ff9ed7c8e",
+        campaignId,
+        runId,
+        messageId: null,
+        decision: "require_approval",
+        status: "pending",
+        reason: "Approve the ranked bindings and declined motions.",
+        requestedAt: now,
+        decidedAt: null,
+        decidedBy: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+    },
     async synthesize(input) {
       assert.deepEqual(input.targetIds, []);
       return {
@@ -183,6 +202,7 @@ test("approval suspends durably and a failed creator motion does not abort synth
     workflows: { campaignWorkflow: workflow },
   });
   const run = await mastra.getWorkflow("campaignWorkflow").createRun();
+  const streamEvents: string[] = [];
   const suspended = await run.start({
     inputData: {
       workspaceId,
@@ -193,8 +213,15 @@ test("approval suspends durably and a failed creator motion does not abort synth
       objective: "Find local businesses.",
       budget: spec.budget,
     },
+    async outputWriter(chunk: unknown) {
+      streamEvents.push(JSON.stringify(chunk));
+    },
   });
   assert.equal(suspended.status, "suspended");
+  const serializedEvents = streamEvents.join("\n");
+  assert.match(serializedEvents, /motion_declined/);
+  assert.match(serializedEvents, /capability_ranked/);
+  assert.match(serializedEvents, /approval\.required/);
 
   const completed = await run.resume({
     step: "approval-gate",

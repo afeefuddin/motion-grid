@@ -32,4 +32,13 @@ export const runRepo = {
       .returning();
     return parseOptionalRow(RunSchema, rows[0]);
   },
+
+  async attachPlan(id: Run["id"], planId: NonNullable<Run["planId"]>) {
+    const rows = await db
+      .update(run)
+      .set({ planId, updatedAt: new Date() })
+      .where(eq(run.id, id))
+      .returning();
+    return parseOptionalRow(RunSchema, rows[0]);
+  },
 };

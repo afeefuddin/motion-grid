@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   ApprovalSchema,
@@ -22,6 +23,7 @@ import {
   plan,
   run,
   target,
+  workspace,
 } from "../../../src/db/schema";
 import { resumeCampaignWorkflow, startCampaignWorkflow } from "./workflows";
 
@@ -45,7 +47,20 @@ export async function createCampaign(
   input: z.output<typeof CreateCampaignRequestSchema>,
 ) {
   const db = await database();
+  const planId = randomUUID();
   const created = await db.transaction(async (transaction) => {
+    const workspaces = await transaction
+      .select({ name: workspace.name })
+      .from(workspace)
+      .where(eq(workspace.id, input.workspaceId))
+      .limit(1);
+    if (workspaces[0] === undefined) {
+      throw new CampaignApiError(
+        "workspace_not_found",
+        "Workspace not found.",
+        404,
+      );
+    }
     const campaigns = await transaction
       .insert(campaign)
       .values({
@@ -66,19 +81,31 @@ export async function createCampaign(
         compiledSpec: { objective: input.objective },
       })
       .returning();
+    await transaction.insert(run).values({
+      id: createdCampaign.id,
+      campaignId: createdCampaign.id,
+      planId: null,
+      kind: "discovery",
+      status: "running",
+      startedAt: new Date(),
+    });
     return {
       campaign: createdCampaign,
       objective: ObjectiveSchema.parse(objectives[0]),
+      workspaceName: workspaces[0].name,
     };
   });
 
   await startCampaignWorkflow(created.campaign.id, {
     workspaceId: input.workspaceId,
     campaignId: created.campaign.id,
+    runId: created.campaign.id,
+    planId,
+    workspaceName: created.workspaceName,
     objective: input.objective,
     budget: input.budget,
   });
-  return created;
+  return { campaign: created.campaign, objective: created.objective };
 }
 
 export async function listCampaigns(workspaceId: string) {
@@ -221,34 +248,65 @@ export async function approveCampaign(
 export async function startRun(input: z.output<typeof StartRunRequestSchema>) {
   const db = await database();
   const campaigns = await db
-    .select({ id: campaign.id })
+    .select({
+      id: campaign.id,
+      workspaceId: campaign.workspaceId,
+      operatingBudgetCents: campaign.operatingBudgetCents,
+      commitBudgetCents: campaign.commitBudgetCents,
+    })
     .from(campaign)
     .where(eq(campaign.id, input.campaignId))
     .limit(1);
   if (campaigns[0] === undefined) {
     throw new CampaignApiError("campaign_not_found", "Campaign not found.", 404);
   }
-  const plans = await db
-    .select({ id: plan.id })
-    .from(plan)
-    .where(eq(plan.campaignId, input.campaignId))
-    .orderBy(desc(plan.version))
+  const workspaces = await db
+    .select({ name: workspace.name })
+    .from(workspace)
+    .where(eq(workspace.id, campaigns[0].workspaceId))
     .limit(1);
+  const objectives = await db
+    .select({ prompt: objective.prompt })
+    .from(objective)
+    .where(eq(objective.campaignId, input.campaignId))
+    .orderBy(asc(objective.createdAt))
+    .limit(1);
+  if (workspaces[0] === undefined || objectives[0] === undefined) {
+    throw new CampaignApiError(
+      "campaign_context_missing",
+      "Campaign workspace or objective is missing.",
+      409,
+    );
+  }
   const runs = await db
     .insert(run)
     .values({
       campaignId: input.campaignId,
-      planId: plans[0] === undefined ? null : plans[0].id,
+      planId: null,
       kind: input.kind,
       status: "running",
       startedAt: new Date(),
     })
     .returning();
   const createdRun = RunSchema.parse(runs[0]);
+  const planId = randomUUID();
   await startCampaignWorkflow(createdRun.id, {
+    workspaceId: campaigns[0].workspaceId,
     campaignId: input.campaignId,
     runId: createdRun.id,
-    kind: input.kind,
+    planId,
+    workspaceName: workspaces[0].name,
+    objective: objectives[0].prompt,
+    budget: {
+      operating: {
+        currency: "USD",
+        amountMinor: campaigns[0].operatingBudgetCents,
+      },
+      commit: {
+        currency: "INR",
+        amountMinor: campaigns[0].commitBudgetCents,
+      },
+    },
   });
   return createdRun;
 }
