@@ -2,6 +2,10 @@
 
 MotionGrid is an AI go-to-market engine: one objective enters, a costed and auditable campaign plan comes out, and consequential actions wait for human approval.
 
+## Demo
+
+[![Watch the MotionGrid demo](https://img.youtube.com/vi/nmzLnnXYfFA/maxresdefault.jpg)](https://youtu.be/nmzLnnXYfFA)
+
 ## Workspace
 
 - `apps/web` — Next.js product UI and server-side boundary
