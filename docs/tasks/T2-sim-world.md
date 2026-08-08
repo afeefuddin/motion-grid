@@ -122,5 +122,24 @@ completing instantly.
 
 ## Handoff note
 
-_(fill in — especially: which creators mention which businesses, and the qualifiable/
-not-qualifiable split)_
+Built the seed-deterministic offline world in `src/sim/fixtures/world.json`: 60 Bengaluru
+businesses, 24 creators, stored HTML/review/contact artifacts, creator audience and safety
+attributes, and INR rate cards in integer paise. The generator uses seed `20260808`; two
+consecutive runs produced SHA-256
+`091831ec35f3ab3f72201ddfa62ff592026cc57750d56fe9cb9b5c499a40c0cc`. Prose is cached in
+the committed fixture and neither generation nor runtime requires a model or network call.
+
+Website-quality split: **36 qualifiable / 24 not qualifiable** (24 bad, 12 mid, 24 good).
+This is an artifact-level fixture classification for demo balancing only; it is not stored as
+a finding on any business. No signal rows or precomputed findings are present.
+
+Planted creator mentions for T8 fuzzy matching:
+
+- `creator-03` — Amulya Gowda (`@amulyagowda`) mentions `business-01`, Aarohi Salon & Spa.
+- `creator-12` — Kavya Murthy (`@kavyamurthy`) mentions `business-11`, Tvacha Skin Clinic.
+- `creator-20` — Sahana Prasad (`@sahanaprasad`) mentions `business-33`, Prana Courtyard.
+
+The six adapters live in `src/adapters/sim/`, add deterministic 50–150 ms latency, and have
+contract-parsing coverage in `adapters.test.ts`. Shadow operating costs are 0.3 cents per geo
+record, 0.2 cents per database record, and 1.1 cents per people record; all are projected and
+carry zero commit cost.

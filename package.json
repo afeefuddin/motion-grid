@@ -6,9 +6,11 @@
     "dev": "pnpm --dir apps/web dev",
     "build": "pnpm typecheck && pnpm --dir apps/web build",
     "typecheck": "tsc --noEmit",
-    "check": "biome check package.json tsconfig.json next.config.ts biome.json drizzle.config.ts src/contracts src/db/schema.ts src/mastra/index.ts",
-    "check:write": "biome check --write package.json tsconfig.json next.config.ts biome.json drizzle.config.ts src/contracts src/db/schema.ts src/mastra/index.ts",
+    "check": "biome check package.json tsconfig.json next.config.ts biome.json drizzle.config.ts src/contracts src/db/schema.ts src/mastra/index.ts src/sim/*.ts src/adapters/sim",
+    "check:write": "biome check --write package.json tsconfig.json next.config.ts biome.json drizzle.config.ts src/contracts src/db/schema.ts src/mastra/index.ts src/sim/*.ts src/adapters/sim",
     "contracts:smoke": "tsx src/contracts/smoke.ts",
+    "sim:generate": "tsx src/sim/generate.ts",
+    "sim:test": "tsx src/adapters/sim/adapters.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
@@ -34,6 +36,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.7",
+    "@faker-js/faker": "10.1.0",
     "@tailwindcss/postcss": "4.1.14",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
