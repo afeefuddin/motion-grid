@@ -2,6 +2,7 @@
 
 import { ArrowRight, CircleDollarSign, MessageCircle, Plus, Route, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import type { z } from "zod";
 import { DeleteCampaignResponseSchema, ListCampaignsResponseSchema } from "../../../src/contracts/api";
@@ -14,6 +15,7 @@ const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" 
 const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
 export function CampaignList() {
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [campaignToDelete, setCampaignToDelete] = useState<CampaignSummary | null>(null);
@@ -45,7 +47,7 @@ export function CampaignList() {
       )}
       {state === "ready" && campaigns.length === 0 && <div className="empty-workspace"><Route size={28} /><h2>No routes planned yet</h2><p>Give MotionGrid one objective. It will return an auditable plan before work begins.</p><Link className="product-button product-button--primary" href="/campaigns/new">Plan the first campaign</Link></div>}
       {campaigns.length > 0 && (
-        <div className="campaign-table-wrap"><table className="campaign-table"><thead><tr><th>Campaign</th><th>Motions</th><th>Status</th><th>Spend</th><th>Replies</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{campaigns.map((campaign) => <tr key={campaign.id}><td><strong>{campaign.name}</strong><small>{campaign.createdAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</small></td><td><div className="motion-labels">{campaign.motions.length > 0 ? campaign.motions.map((motion) => <span key={motion}>{motion}</span>) : <em>Planning</em>}</div></td><td><span className={`state-label state-label--${campaign.status}`}>{campaign.status.replace("_", " ")}</span></td><td><span className="money-line"><CircleDollarSign size={14} /> {usd.format(campaign.operatingSpentCents / 100)}</span><small>{inr.format(campaign.commitSpentCents / 100)} committed</small></td><td><span className="money-line"><MessageCircle size={14} /> {campaign.replyCount}</span></td><td><div className="campaign-row-actions"><button className="row-delete" type="button" aria-label={`Delete ${campaign.name}`} onClick={(event) => { deleteTrigger.current = event.currentTarget; setCampaignToDelete(campaign); }}><Trash2 size={15} /></button><Link className="row-link" href={`/campaigns/${campaign.id}`} aria-label={`Open ${campaign.name}`}><ArrowRight size={17} /></Link></div></td></tr>)}</tbody></table></div>
+        <div className="campaign-table-wrap"><table className="campaign-table"><thead><tr><th>Campaign</th><th>Motions</th><th>Status</th><th>Spend</th><th>Replies</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{campaigns.map((campaign) => <tr key={campaign.id} onClick={(event) => { if ((event.target as HTMLElement).closest("a, button") === null) router.push(`/campaigns/${campaign.id}`); }}><td><strong>{campaign.name}</strong><small>{campaign.createdAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</small></td><td><div className="motion-labels">{campaign.motions.length > 0 ? campaign.motions.map((motion) => <span key={motion}>{motion}</span>) : <em>Planning</em>}</div></td><td><span className={`state-label state-label--${campaign.status}`}>{campaign.status.replace("_", " ")}</span></td><td><span className="money-line"><CircleDollarSign size={14} /> {usd.format(campaign.operatingSpentCents / 100)}</span><small>{inr.format(campaign.commitSpentCents / 100)} committed</small></td><td><span className="money-line"><MessageCircle size={14} /> {campaign.replyCount}</span></td><td><div className="campaign-row-actions"><button className="row-delete" type="button" aria-label={`Delete ${campaign.name}`} onClick={(event) => { deleteTrigger.current = event.currentTarget; setCampaignToDelete(campaign); }}><Trash2 size={15} /></button><Link className="row-link" href={`/campaigns/${campaign.id}`} aria-label={`Open ${campaign.name}`}><ArrowRight size={17} /></Link></div></td></tr>)}</tbody></table></div>
       )}
       {campaignToDelete && <DeleteCampaignDialog campaign={campaignToDelete} onClose={() => { setCampaignToDelete(null); window.requestAnimationFrame(() => deleteTrigger.current?.focus()); }} onDeleted={(campaignId) => { setCampaigns((current) => current.filter((campaign) => campaign.id !== campaignId)); setCampaignToDelete(null); window.requestAnimationFrame(() => deleteTrigger.current?.focus()); }} />}
     </section>
