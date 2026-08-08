@@ -56,7 +56,7 @@ jobs:
           MASTRA_PROJECT_ID: ${{ vars.MASTRA_PROJECT_ID }}
         run: |
           umask 077
-          env_file="$PWD/deploy.env"
+          env_file="$RUNNER_TEMP/mastra-deploy.env"
           trap 'rm -f "$env_file"' EXIT
           # Delivery secrets stay with the Next.js deployment; this runtime needs model access.
           {
