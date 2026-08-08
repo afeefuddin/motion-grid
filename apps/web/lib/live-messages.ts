@@ -10,8 +10,8 @@ import type { CapabilityId } from "../../../src/contracts/capabilities";
 import {
   ResendEmailAdapter,
   ResendEmailError,
-  TwilioWhatsAppAdapter,
-  TwilioWhatsAppError,
+  WhatsAppWebAdapter,
+  WhatsAppWebError,
 } from "../../../src/adapters/live";
 import type { Adapter } from "../../../src/capabilities/adapter";
 import {
@@ -60,7 +60,7 @@ function requireAllowedRecipient(channel: "email" | "whatsapp", address: string)
   const environmentName =
     channel === "email"
       ? "RESEND_ALLOWED_RECIPIENTS"
-      : "TWILIO_ALLOWED_RECIPIENTS";
+      : "WHATSAPP_ALLOWED_RECIPIENTS";
   const recipients = commaSeparatedAllowlist(environmentName);
   if (recipients.size === 0) {
     throw new MessageDeliveryError(
@@ -78,20 +78,12 @@ function requireAllowedRecipient(channel: "email" | "whatsapp", address: string)
   }
 }
 
-function statusCallbackUrl() {
-  const publicUrl = process.env.PUBLIC_WEBHOOK_URL;
-  return publicUrl === undefined || publicUrl === ""
-    ? undefined
-    : new URL("/api/webhooks/twilio/status", publicUrl).toString();
-}
-
 function liveAdapter(channel: "email" | "whatsapp") {
   if (channel === "whatsapp") {
-    return new TwilioWhatsAppAdapter({
-      accountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
-      authToken: process.env.TWILIO_AUTH_TOKEN ?? "",
-      from: process.env.TWILIO_WHATSAPP_FROM ?? "",
-      statusCallback: statusCallbackUrl(),
+    return new WhatsAppWebAdapter({
+      baseUrl: process.env.WHATSAPP_SERVICE_URL ?? "",
+      apiKey: process.env.WHATSAPP_SERVICE_API_KEY ?? "",
+      from: process.env.WHATSAPP_FROM ?? "",
     });
   }
   return new ResendEmailAdapter({
@@ -214,7 +206,7 @@ export async function approveAndDeliverMessage(
   requireAllowedRecipient(persistedMessage.channel, row.address);
   const from =
     persistedMessage.channel === "whatsapp"
-      ? process.env.TWILIO_WHATSAPP_FROM ?? ""
+      ? process.env.WHATSAPP_FROM ?? ""
       : process.env.RESEND_FROM_EMAIL ?? "";
   const output = await executeCapability({
     context: {
@@ -274,9 +266,9 @@ export function providerErrorResponse(error: unknown) {
   if (error instanceof MessageDeliveryError) {
     return { code: error.code, message: error.message, status: error.status };
   }
-  if (error instanceof TwilioWhatsAppError) {
+  if (error instanceof WhatsAppWebError) {
     return {
-      code: String(error.code ?? "twilio_error"),
+      code: error.code,
       message: error.message,
       status: error.statusCode ?? 502,
     };

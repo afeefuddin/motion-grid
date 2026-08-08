@@ -1,0 +1,16 @@
+{
+  "name": "motiongrid-whatsapp-web-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "qrcode": "^1.5.4",
+    "whatsapp-web.js": "1.34.7"
+  }
+}

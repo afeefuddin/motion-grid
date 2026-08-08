@@ -47,18 +47,13 @@ curl --request POST http://localhost:3000/api/messages/email/send \
   --data '{"to":"delivered@resend.dev","subject":"MotionGrid test","text":"Resend is connected."}'
 ```
 
-The Twilio WhatsApp integration uses the same server-side allowlist at `POST /api/messages/whatsapp/send`. Sandbox recipients must send Twilio's `join <sandbox-code>` message before they can receive a demo message.
+Approved WhatsApp drafts are delivered through the separately hosted `whatsapp-web.js` service. Configure `WHATSAPP_SERVICE_URL`, `WHATSAPP_SERVICE_API_KEY`, `WHATSAPP_FROM`, and the server-side `WHATSAPP_ALLOWED_RECIPIENTS` allowlist. The VM service and systemd/Caddy configuration live in `deploy/whatsapp-web-api`.
 
 ```bash
-curl --request POST http://localhost:3000/api/messages/whatsapp/send \
+curl --request POST http://localhost:3000/api/messages/MESSAGE_ID/approve \
   --header 'Content-Type: application/json' \
-  --data '{"to":"+919876543210","body":"MotionGrid is connected to WhatsApp."}'
+  --data '{"approved":true,"decidedBy":"demo-user"}'
 ```
-
-Configure these public Twilio callbacks after deployment:
-
-- Incoming messages: `/api/webhooks/twilio/whatsapp`
-- Delivery status: `/api/webhooks/twilio/status`
 
 ## Planning documents
 
