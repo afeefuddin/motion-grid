@@ -112,15 +112,52 @@ directly. If T3 isn't finished, code against the contract and the interface in t
 
 ## Done when
 
-- [ ] Five motions registered; a registry test asserts every declared capability exists
-- [ ] Each agent callable standalone with a fixture input, returning schema-valid output
-- [ ] Every capability exposed as a Mastra tool
-- [ ] Model IDs match T0's verified findings
-- [ ] `grep -rn " as \| any" src/motions src/mastra/agents src/mastra/tools` returns nothing
-- [ ] Handoff note written
+- [x] Five motions registered; a registry test asserts every declared capability exists
+- [x] Each agent callable standalone with a fixture input, returning schema-valid output
+- [x] Every capability exposed as a Mastra tool
+- [x] Model IDs match T0's verified findings
+- [x] `grep -rn " as \| any" src/motions src/mastra/agents src/mastra/tools` returns nothing
+- [x] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — especially agent names/IDs T6 needs, and any prompt behaviour worth knowing)_
+Completed 2026-08-08.
+
+- `motionRegistry` contains all five frozen motion IDs. Motion definitions carry discovery,
+  observation, contact, ordered channels, allocation, terminal state, consent, and weighted
+  rubric data. `consumer.email` records its customer-base trigger without inventing a
+  capability. `business.local` is WhatsApp-first and its six criteria cover the observable
+  website and review defects in this brief.
+- Stable Mastra agent IDs are `objective-compiler`, `planner`, `evidence-extractor`,
+  `assessor`, `drafter`, and `reply-classifier`. T6 should call the exported `run*` functions;
+  they parse the frozen step input, invoke structured output, and return the matching
+  `{ ok: true, data }` step contract. The assessor is intentional: the main plan requires
+  model-based assessment over signals only, but the original five-agent table omitted the
+  agent needed for that step.
+- Model routing is Opus 4.7 for objective compilation and planning, Sonnet 4.6 for evidence,
+  assessment, and drafting, and Haiku 4.5 for reply classification. The first two match T0's
+  verified handoff; the installed Mastra 1.57.0 provider registry also contains the Haiku
+  route used for the low-cost tier.
+- Evidence extraction explicitly requires verbatim excerpts and leaves `verified: false` for
+  T6's deterministic string check. Assessment instructions prohibit raw documents. Drafting
+  requires one supplied evidence ID per sentence and uses a null subject for WhatsApp.
+- Capability tools use provider-safe tool IDs (`geo-query`, `db-query`, and so on) while
+  preserving the frozen capability IDs in the registry and ledger. Each capability has an
+  individual factory, so a workflow configures only its persisted binding. The all-tools
+  factory is a convenience. Every execution delegates to T3's `executeCapability` with the
+  bound adapter, run context, and ledger writer; no tool calls an adapter directly.
+- T2's current sim objects still use its earlier `{ adapterId, capability, execute(input) }`
+  shape instead of T3's final `Adapter` interface (`id`, `provides`, `mode`, and
+  `execute(capabilityId, input)`). T4 deliberately does not hide that cross-task mismatch.
+  T6 needs T2's adapters updated or normalized at its composition boundary before passing
+  them to these tool factories.
+- Verification passed: `pnpm typecheck`, production `pnpm build`, Biome over all T4 paths,
+  the zero-cast grep, contract smoke parsing (167 schemas), sim adapter tests, and 9 focused
+  T4 tests. The broader policy/ledger/capability tests passed; the repository test process
+  could not start because this shell has no `DATABASE_URL`.
+- The shell also has no `ANTHROPIC_API_KEY`, so no paid live model request was made. Focused
+  tests inject schema-valid fixture agents through the same standalone runners and verify
+  their complete input/output boundaries; live provider validation remains an environment
+  check for T10 when credentials are present.
