@@ -203,7 +203,11 @@ export async function approveAndDeliverMessage(
     return { message: persistedMessage, approval: recordedApproval };
   }
 
-  requireAllowedRecipient(persistedMessage.channel, row.address);
+  const to =
+    persistedMessage.channel === "whatsapp"
+      ? process.env.WHATSAPP_TO ?? row.address
+      : process.env.RESEND_TO_EMAIL ?? row.address;
+  requireAllowedRecipient(persistedMessage.channel, to);
   const from =
     persistedMessage.channel === "whatsapp"
       ? process.env.WHATSAPP_FROM ?? ""
@@ -225,7 +229,7 @@ export async function approveAndDeliverMessage(
       messageId: persistedMessage.id,
       channel: persistedMessage.channel,
       from,
-      to: row.address,
+      to,
       subject: persistedMessage.subject,
       body: persistedMessage.body,
       idempotencyKey: `message-${persistedMessage.id}`,
