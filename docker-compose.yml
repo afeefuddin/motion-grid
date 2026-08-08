@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: motiongrid
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d motiongrid"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    volumes:
+      - motiongrid-postgres:/var/lib/postgresql/data
+
+volumes:
+  motiongrid-postgres:

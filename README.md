@@ -14,16 +14,32 @@ MotionGrid is an AI go-to-market engine: one objective enters, a costed and audi
 ## Start locally
 
 ```bash
-npm install
+pnpm install
 cp .env.example apps/web/.env.local
 cp .env.example apps/agent-runtime/.env
-npm run dev:agents
-npm run dev:web
+docker compose up -d postgres
+pnpm dev
 ```
+
+On macOS with Apple's `container` runtime instead of Docker, the equivalent database command
+is:
+
+```bash
+container run --name motiongrid-postgres \
+  -e POSTGRES_DB=motiongrid \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  -d docker.io/pgvector/pgvector:pg17
+```
+
+Then apply the application schema with `pnpm db:push`.
 
 The web app runs on `http://localhost:3000`; Mastra Studio/server uses `http://localhost:4111` by default.
 
-The scaffold intentionally keeps provider calls and persistent repositories as explicit placeholders. It demonstrates the runtime boundaries without pretending that external actions or durable domain storage already exist.
+The root `src/contracts` package is the authoritative Zod contract surface, and
+`src/db/schema.ts` is the authoritative Drizzle schema. The app and agent workspaces consume
+those boundaries as later implementation waves are completed.
 
 ## Planning documents
 

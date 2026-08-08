@@ -122,16 +122,48 @@ a five-minute check that otherwise surfaces at hour six for someone else.
 
 ## Done when
 
-- [ ] `pnpm typecheck` and `pnpm build` pass
-- [ ] `drizzle-kit push` applies cleanly against the container
-- [ ] A smoke test imports every exported schema and parses one example of each
-- [ ] `src/contracts/index.ts` exports everything the other ten tasks need
-- [ ] Mastra model-router finding documented below
-- [ ] Handoff note written
+- [x] `pnpm typecheck` and `pnpm build` pass
+- [x] `drizzle-kit push` applies cleanly against the container
+- [x] A smoke test imports every exported schema and parses one example of each
+- [x] `src/contracts/index.ts` exports everything the other ten tasks need
+- [x] Mastra model-router finding documented below
+- [x] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in: what you built, contract decisions worth knowing, the Mastra model-ID finding,
-anything Wave 1 must not assume)_
+Completed 2026-08-08.
+
+- Built the pnpm/Next.js/TypeScript/Biome/Tailwind scaffold, Postgres 17 + pgvector container
+  definition, Drizzle configuration and initial migration, and the HMR-safe Mastra stub using
+  `PostgresStore` on `globalThis`.
+- Added exactly 18 application tables. UUIDs are the public identifiers; timestamps are
+  timezone-aware. Targets deduplicate on `(campaign_id, kind, external_ref)`. Edges are
+  campaign-scoped and prevent self-links. Monetary amounts are non-negative integer minor
+  units: operating columns are USD cents and commit columns are INR paise despite the legacy
+  `_cents` suffix in the task contract; they must never be summed or FX-converted.
+- `target.payload` and `signal.payload` are discriminated at the Zod contract layer. Database
+  JSONB remains storage-only; consumers must use the derived entity schemas. Documentary and
+  statistical evidence cannot be mixed, and `AssessInputSchema` accepts signals rather than
+  source documents, preserving the evidence firewall.
+- All eight capabilities declare input, output, and `{ unit, operatingCents, commitCents }`
+  unit-cost schemas. All eleven steps use `{ ok: true, data } | { ok: false, reason }`. The
+  API contract includes all route boundaries and the complete nine-event SSE union.
+- `pnpm contracts:smoke` imports the barrel and parses an example for every exported Zod
+  schema (167 schemas at handoff). `pnpm typecheck` and `pnpm build` pass.
+- Generated `drizzle/0000_black_speed_demon.sql`; `drizzle-kit migrate` applied cleanly to a
+  fresh database with all 18 tables and the `vector` extension, and `drizzle-kit push --force`
+  also applied cleanly
+  to a fresh `pgvector/pgvector:pg17` instance. Docker Compose uses port 5432. Verification
+  used Apple container port 5433 because another local Postgres already occupied 5432:
+  `container run --name motiongrid-postgres -e POSTGRES_DB=motiongrid -e
+  POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5433:5432 -d
+  docker.io/pgvector/pgvector:pg17`.
+- Mastra model-router finding: installed `@mastra/core` 1.57.0's generated provider registry
+  contains both `anthropic/claude-opus-4-7` and `anthropic/claude-sonnet-4-6`; current Mastra
+  documentation also demonstrates Sonnet 4.6. Use those router strings directly. No AI SDK
+  provider instance or fallback pin is required.
+- Wave 1 must not assume database JSONB values are already parsed when bypassing the entity
+  schemas, that nullable foreign keys are present, or that operating and commit minor units
+  share a currency.
