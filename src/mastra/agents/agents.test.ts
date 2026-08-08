@@ -116,7 +116,7 @@ test("standalone runners validate fixture input and schema-bound output", async 
     budget,
   });
   const planned = await runPlanner(
-    { campaignId, spec },
+    { campaignId, spec, connectedSources: [] },
     fixtureAgent(planData),
   );
   assert.deepEqual(planned, { ok: true, data: planData });
@@ -240,4 +240,46 @@ test("standalone runners validate fixture input and schema-bound output", async 
     fixtureAgent(classification),
   );
   assert.deepEqual(classified, { ok: true, data: classification });
+});
+
+test("campaign specs reject inferred budgets outside the operating bounds", () => {
+  const input = {
+    name: "Bounded campaign",
+    goal: "Find qualified companies",
+    geography: "Pune",
+    motions: ["business.online"],
+    targetCriteria: ["dental clinic"],
+    channels: ["email"],
+    successMetric: "Qualified meetings",
+  };
+  assert.equal(
+    CampaignSpecSchema.safeParse({
+      ...input,
+      budget: {
+        operating: { currency: "USD", amountMinor: 99 },
+        commit: { currency: "INR", amountMinor: 0 },
+      },
+    }).success,
+    false,
+  );
+  assert.equal(
+    CampaignSpecSchema.safeParse({
+      ...input,
+      budget: {
+        operating: { currency: "USD", amountMinor: 100 },
+        commit: { currency: "INR", amountMinor: 50_000_000 },
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    CampaignSpecSchema.safeParse({
+      ...input,
+      budget: {
+        operating: { currency: "USD", amountMinor: 10_001 },
+        commit: { currency: "INR", amountMinor: 50_000_001 },
+      },
+    }).success,
+    false,
+  );
 });

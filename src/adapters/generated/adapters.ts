@@ -1,5 +1,8 @@
 import type { Adapter, AdapterProfile } from "../../capabilities/adapter";
 import {
+  DbQueryInputSchema,
+  DbQueryOutputSchema,
+  DbQueryUnitCostSchema,
   GeoQueryInputSchema,
   GeoQueryOutputSchema,
   GeoQueryUnitCostSchema,
@@ -68,12 +71,48 @@ export function createGeneratedMarketAdapters(
       const parts = queryParts(input.query);
       const world = await store.worldFor({
         ...parts,
+        geography: input.locality ?? parts.geography,
         limit: input.limit,
         seed: 20260808,
         latitude: input.latitude,
         longitude: input.longitude,
       });
       return GeoQueryOutputSchema.parse({
+        targets: world.businesses.slice(0, input.limit).map(organizationTarget),
+      });
+    },
+  };
+
+  const db: Adapter<"db.query"> = {
+    id: "generated.market.db",
+    provides: ["db.query"],
+    mode: "generated",
+    unitCost: DbQueryUnitCostSchema.parse({
+      unit: "record",
+      operatingCents: 1,
+      commitCents: 0,
+      projected: true,
+    }),
+    profile,
+    async execute(capabilityId, rawInput) {
+      if (capabilityId !== "db.query") {
+        throw new Error(
+          "Generated database adapter received a different capability.",
+        );
+      }
+      const input = DbQueryInputSchema.parse(rawInput);
+      if (input.entityKind === "creator") {
+        return DbQueryOutputSchema.parse({ targets: [] });
+      }
+      const world = await store.worldFor({
+        geography: input.filters.locality ?? "global",
+        category: input.filters.category ?? "company",
+        limit: input.limit,
+        seed: 20260808,
+        latitude: 0,
+        longitude: 0,
+      });
+      return DbQueryOutputSchema.parse({
         targets: world.businesses.slice(0, input.limit).map(organizationTarget),
       });
     },
@@ -179,11 +218,12 @@ export function createGeneratedMarketAdapters(
     },
   };
 
-  return { geo, web, reviews, people };
+  return { geo, db, web, reviews, people };
 }
 
 const generatedMarketAdapters = createGeneratedMarketAdapters();
 export const generatedMarketGeoAdapter = generatedMarketAdapters.geo;
+export const generatedMarketDbAdapter = generatedMarketAdapters.db;
 export const generatedMarketWebAdapter = generatedMarketAdapters.web;
 export const generatedMarketReviewsAdapter = generatedMarketAdapters.reviews;
 export const generatedMarketPeopleAdapter = generatedMarketAdapters.people;

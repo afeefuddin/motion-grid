@@ -19,14 +19,25 @@ export type PlanData = z.output<typeof PlanDataSchema>;
 type CampaignSpec = z.output<typeof CampaignSpecSchema>;
 export type ReplanTrigger = "binding_unavailable" | "operating_budget_cap";
 
-export interface WorkflowEvent {
-  readonly type: "replan_started" | "replan_completed" | "replan_exhausted";
-  readonly campaignId: string;
-  readonly runId: string;
-  readonly trigger: ReplanTrigger;
-  readonly reason: string;
-  readonly attempt: number;
-}
+export type WorkflowEvent =
+  | {
+      readonly type: "replan_started" | "replan_completed" | "replan_exhausted";
+      readonly campaignId: string;
+      readonly runId: string;
+      readonly trigger: ReplanTrigger;
+      readonly reason: string;
+      readonly attempt: number;
+    }
+  | {
+      readonly type: "assessment.recorded";
+      readonly campaignId: string;
+      readonly runId: string;
+      readonly targetId: string;
+      readonly score: number;
+      readonly isFit: boolean;
+      readonly reason: string;
+      readonly droppedCount: number;
+    };
 
 export interface WorkflowEventSink {
   emit(event: WorkflowEvent): Promise<void>;

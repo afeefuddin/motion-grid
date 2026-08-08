@@ -13,6 +13,9 @@ export const motionIds = defineValues(
 );
 export const MotionIdSchema = z.enum(motionIds);
 
+export const workspaceSources = defineValues("first_party_customers");
+export const WorkspaceSourceSchema = z.enum(workspaceSources);
+
 export const targetKinds = defineValues("organization", "person", "segment");
 export const TargetKindSchema = z.enum(targetKinds);
 

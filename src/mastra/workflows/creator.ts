@@ -2,10 +2,7 @@ import { capabilityRegistry } from "../../capabilities";
 import type { Adapter } from "../../capabilities/adapter";
 import { AssessDataSchema, type Target } from "../../contracts";
 import { assessmentRubric, getMotion } from "../../motions";
-import type {
-  BusinessLocalInput,
-  BusinessLocalRuntime,
-} from "./business-local";
+import type { OrganizationInput, OrganizationRuntime } from "./organization";
 import { executePlannedCapability } from "./replan";
 
 function errorReason(error: unknown): string {
@@ -13,9 +10,9 @@ function errorReason(error: unknown): string {
 }
 
 async function assessCreator(
-  input: BusinessLocalInput,
+  input: OrganizationInput,
   target: Target,
-  runtime: BusinessLocalRuntime,
+  runtime: OrganizationRuntime,
 ): Promise<
   | { readonly ok: true; readonly targetId: string }
   | { readonly ok: false; readonly targetId: string; readonly reason: string }
@@ -95,8 +92,8 @@ async function assessCreator(
 
 /** Discovers creators once and assesses each persisted profile independently. */
 export async function runCreatorMotion(
-  input: BusinessLocalInput,
-  runtime: BusinessLocalRuntime,
+  input: OrganizationInput,
+  runtime: OrganizationRuntime,
   adapters: readonly Adapter<"db.query">[],
 ): Promise<{
   readonly ok: boolean;
@@ -128,6 +125,7 @@ export async function runCreatorMotion(
     discovered.data.targets.map((target) => ({
       ...target,
       campaignId: input.campaignId,
+      motionId: "creator",
       relationship: "prospect_partner",
     })),
   );

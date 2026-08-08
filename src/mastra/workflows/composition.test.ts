@@ -100,13 +100,17 @@ const emptyGeo: Adapter<"geo.query"> = {
   },
 };
 
-test("approval suspends durably and a failed creator motion does not abort synthesis", async () => {
+test("selected motions run without plan approval and synthesis tolerates skipped motions", async () => {
   const workflow = createCampaignWorkflow({
     async compileObjective() {
       return spec;
     },
     async planCampaign() {
       return plan;
+    },
+    async recordCompiledSpec(input) {
+      assert.equal(input.name, spec.name);
+      assert.deepEqual(input.budget, spec.budget);
     },
     businessRuntime() {
       return {
@@ -143,8 +147,9 @@ test("approval suspends durably and a failed creator motion does not abort synth
             },
           },
         },
-        adapters: { geo: [emptyGeo], web: [], reviews: [], people: [] },
+        adapters: { geo: [emptyGeo], db: [], web: [], reviews: [], people: [] },
         ledger: { async record() {} },
+        events: { async emit() {} },
         replans: new ReplanController({
           campaignId,
           runId,
@@ -159,28 +164,6 @@ test("approval suspends durably and a failed creator motion does not abort synth
     },
     async runCreator() {
       throw new Error("creator fixture failed");
-    },
-    async recordPlanDecision(input) {
-      assert.equal(input.approved, true);
-    },
-    async requestPlanApproval(input) {
-      assert.equal(input.campaignId, campaignId);
-      assert.equal(input.runId, runId);
-      const now = new Date();
-      return {
-        id: "14a604f0-ddd8-4115-a7c6-d33ff9ed7c8e",
-        campaignId,
-        runId,
-        messageId: null,
-        decision: "require_approval",
-        status: "pending",
-        reason: "Approve the ranked bindings and declined motions.",
-        requestedAt: now,
-        decidedAt: null,
-        decidedBy: null,
-        createdAt: now,
-        updatedAt: now,
-      };
     },
     async synthesize(input) {
       assert.deepEqual(input.targetIds, []);
@@ -203,7 +186,7 @@ test("approval suspends durably and a failed creator motion does not abort synth
   });
   const run = await mastra.getWorkflow("campaignWorkflow").createRun();
   const streamEvents: string[] = [];
-  const suspended = await run.start({
+  const completed = await run.start({
     inputData: {
       workspaceId,
       campaignId,
@@ -212,25 +195,16 @@ test("approval suspends durably and a failed creator motion does not abort synth
       workspaceName: "MotionGrid",
       objective: "Find local businesses.",
       budget: spec.budget,
+      connectedSources: [],
     },
     async outputWriter(chunk: unknown) {
       streamEvents.push(JSON.stringify(chunk));
     },
   });
-  assert.equal(suspended.status, "suspended");
+  assert.equal(completed.status, "success");
   const serializedEvents = streamEvents.join("\n");
   assert.match(serializedEvents, /motion_declined/);
   assert.match(serializedEvents, /capability_ranked/);
-  assert.match(serializedEvents, /approval\.required/);
-
-  const completed = await run.resume({
-    step: "approval-gate",
-    resumeData: {
-      approved: true,
-      reviewerId: "62dd4187-ee13-4ec4-83c8-7e850763a9e8",
-    },
-  });
-  assert.equal(completed.status, "success");
   if (completed.status === "success") {
     assert.equal(completed.result.outcome.targetCount, 0);
   }

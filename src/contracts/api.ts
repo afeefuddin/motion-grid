@@ -40,9 +40,9 @@ export const ApiErrorSchema = z.object({
 
 export const CreateCampaignRequestSchema = z.object({
   workspaceId: IdSchema,
-  name: z.string().min(1),
+  name: z.string().min(1).optional(),
   objective: z.string().min(1),
-  budget: DualBudgetSchema,
+  budget: DualBudgetSchema.optional(),
 });
 export const CreateCampaignResponseSchema = z.object({
   campaign: CampaignSchema,
@@ -209,6 +209,18 @@ export const SignalAddedEventSchema = EventEnvelopeSchema.extend({
   data: z.object({ signal: SignalSchema }),
 });
 
+export const AssessmentRecordedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("assessment.recorded"),
+  data: z.object({
+    targetId: IdSchema,
+    score: z.number().min(0).max(1),
+    isFit: z.boolean(),
+    reason: z.string().min(1),
+    droppedCount: z.int().nonnegative(),
+    delta: z.string().default("Assessment recorded."),
+  }),
+});
+
 export const EdgeDiscoveredEventSchema = EventEnvelopeSchema.extend({
   type: z.literal("edge.discovered"),
   data: z.object({ edge: EdgeSchema }),
@@ -252,6 +264,7 @@ export const SseEventSchema = z.discriminatedUnion("type", [
   TargetStateEventSchema,
   CostTickEventSchema,
   SignalAddedEventSchema,
+  AssessmentRecordedEventSchema,
   EdgeDiscoveredEventSchema,
   ApprovalRequiredEventSchema,
   MessageSentEventSchema,

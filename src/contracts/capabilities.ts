@@ -46,6 +46,7 @@ export const TargetCandidateSchema = z.discriminatedUnion("kind", [
 
 export const GeoQueryInputSchema = z.object({
   query: z.string().min(1),
+  locality: z.string().min(1).optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radiusKm: z.number().positive(),

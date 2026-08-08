@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { Adapter } from "../../capabilities/adapter";
 import { capabilityRegistry } from "../../capabilities/registry";
+import type { TargetCandidateSchema } from "../../contracts/capabilities";
 import type {
   Contact,
   Message,
@@ -23,10 +24,19 @@ import type {
   NewTarget,
 } from "../../db/repositories";
 import { verifyEvidence } from "../../evidence";
-import { assessmentRubric, getMotion } from "../../motions";
+import {
+  assessmentRubric,
+  consentBasisByMotion,
+  getMotion,
+} from "../../motions";
+import type { MotionId, OrganizationMotionId } from "../../motions/types";
 import { evaluatePolicies } from "../../policy";
 import type { StructuredAgent } from "../agents/runner";
-import { executePlannedCapability, type ReplanController } from "./replan";
+import {
+  executePlannedCapability,
+  type ReplanController,
+  type WorkflowEventSink,
+} from "./replan";
 
 type CampaignSpec = z.output<typeof CampaignSpecSchema>;
 type PlanData = z.output<typeof PlanDataSchema>;
@@ -34,8 +44,16 @@ type SourceDocument = z.output<typeof SourceDocumentSchema>;
 type ExtractEvidenceData = z.output<typeof ExtractEvidenceDataSchema>;
 type AssessData = z.output<typeof AssessDataSchema>;
 type DraftData = z.output<typeof DraftDataSchema>;
+type TargetCandidate = z.output<typeof TargetCandidateSchema>;
+type OrganizationDiscoveryResult =
+  | {
+      readonly ok: true;
+      readonly data: { readonly targets: readonly TargetCandidate[] };
+      readonly plan: PlanData;
+    }
+  | { readonly ok: false; readonly reason: string };
 
-export interface BusinessLocalStore {
+export interface OrganizationStore {
   saveTargets(targets: readonly NewTarget[]): Promise<readonly Target[]>;
   saveSignals(signals: readonly NewSignal[]): Promise<readonly Signal[]>;
   saveAssessment(assessment: NewAssessment): Promise<void>;
@@ -44,28 +62,30 @@ export interface BusinessLocalStore {
   updateTarget(targetId: string, status: Target["status"]): Promise<void>;
 }
 
-export interface BusinessLocalAgents {
+export interface OrganizationAgents {
   readonly extract: StructuredAgent<ExtractEvidenceData>;
   readonly assess: StructuredAgent<AssessData>;
   readonly draft: StructuredAgent<DraftData>;
 }
 
-export interface BusinessLocalAdapters {
+export interface OrganizationAdapters {
   readonly geo: readonly Adapter<"geo.query">[];
+  readonly db: readonly Adapter<"db.query">[];
   readonly web: readonly Adapter<"web.fetch">[];
   readonly reviews: readonly Adapter<"reviews.fetch">[];
   readonly people: readonly Adapter<"people.find">[];
 }
 
-export interface BusinessLocalRuntime {
-  readonly store: BusinessLocalStore;
-  readonly agents: BusinessLocalAgents;
-  readonly adapters: BusinessLocalAdapters;
+export interface OrganizationRuntime {
+  readonly store: OrganizationStore;
+  readonly agents: OrganizationAgents;
+  readonly adapters: OrganizationAdapters;
   readonly ledger: import("../../capabilities/execute").ToolCallWriter;
   readonly replans: ReplanController;
+  events: WorkflowEventSink;
 }
 
-export interface BusinessLocalInput {
+export interface OrganizationInput {
   readonly workspaceName: string;
   readonly campaignId: string;
   readonly runId: string;
@@ -97,18 +117,21 @@ function documentPrompt(documents: readonly SourceDocument[]): string {
   return JSON.stringify({ documents });
 }
 
-function assessmentPrompt(input: {
-  readonly campaignId: string;
-  readonly runId: string;
-  readonly targetId: string;
-  readonly signals: readonly Signal[];
-  readonly droppedCount: number;
-}): string {
+function assessmentPrompt(
+  motionId: MotionId,
+  input: {
+    readonly campaignId: string;
+    readonly runId: string;
+    readonly targetId: string;
+    readonly signals: readonly Signal[];
+    readonly droppedCount: number;
+  },
+): string {
   // This serialization is the evidence firewall: raw documents are not accepted here.
   return JSON.stringify({
     ...input,
     signals: input.signals,
-    rubric: assessmentRubric(getMotion("business.local")),
+    rubric: assessmentRubric(getMotion(motionId)),
   });
 }
 
@@ -131,9 +154,10 @@ function draftPrompt(input: {
 }
 
 /** Executes one target independently; this is the failure boundary used by foreach. */
-export async function processBusinessLocalTarget(
-  input: BusinessLocalInput & { readonly target: Target },
-  runtime: BusinessLocalRuntime,
+export async function processOrganizationTarget(
+  motionId: OrganizationMotionId,
+  input: OrganizationInput & { readonly target: Target },
+  runtime: OrganizationRuntime,
 ): Promise<TargetResult> {
   try {
     let plan = input.plan;
@@ -142,56 +166,68 @@ export async function processBusinessLocalTarget(
       return {
         ok: false,
         targetId: input.target.id,
-        reason: "business.local requires an organization target.",
+        reason: `${motionId} requires an organization target.`,
       };
     }
-    if (input.target.payload.websiteUrl !== null) {
-      const web = await executePlannedCapability({
-        capabilityId: "web.fetch",
-        capability: capabilityRegistry["web.fetch"],
-        input: {
-          externalRef: input.target.externalRef,
-          url: input.target.payload.websiteUrl,
-        },
-        plan,
-        adapters: runtime.adapters.web,
-        context: {
-          campaignId: input.campaignId,
-          runId: input.runId,
-          targetId: input.target.id,
-        },
-        ledger: runtime.ledger,
-        replans: runtime.replans,
-      });
-      if (!web.ok) {
-        return { ...web, targetId: input.target.id };
+    for (const capabilityId of getMotion(motionId).observation) {
+      if (capabilityId === "web.fetch") {
+        if (input.target.payload.websiteUrl === null) {
+          continue;
+        }
+        const web = await executePlannedCapability({
+          capabilityId,
+          capability: capabilityRegistry[capabilityId],
+          input: {
+            externalRef: input.target.externalRef,
+            url: input.target.payload.websiteUrl,
+          },
+          plan,
+          adapters: runtime.adapters.web,
+          context: {
+            campaignId: input.campaignId,
+            runId: input.runId,
+            targetId: input.target.id,
+          },
+          ledger: runtime.ledger,
+          replans: runtime.replans,
+        });
+        if (!web.ok) {
+          return { ...web, targetId: input.target.id };
+        }
+        plan = web.plan;
+        documents.push({ kind: "web", document: web.data });
+        continue;
       }
-      plan = web.plan;
-      documents.push({ kind: "web", document: web.data });
+      if (capabilityId === "reviews.fetch") {
+        const reviews = await executePlannedCapability({
+          capabilityId,
+          capability: capabilityRegistry[capabilityId],
+          input: { externalRef: input.target.externalRef, limit: 6 },
+          plan,
+          adapters: runtime.adapters.reviews,
+          context: {
+            campaignId: input.campaignId,
+            runId: input.runId,
+            targetId: input.target.id,
+          },
+          ledger: runtime.ledger,
+          replans: runtime.replans,
+        });
+        if (!reviews.ok) {
+          return { ...reviews, targetId: input.target.id };
+        }
+        plan = reviews.plan;
+        documents.push({
+          kind: "reviews",
+          sourceRef: reviews.data.sourceRef,
+          reviews: reviews.data.reviews,
+        });
+        continue;
+      }
+      throw new Error(
+        `${motionId} declares unsupported observation capability ${capabilityId}.`,
+      );
     }
-    const reviews = await executePlannedCapability({
-      capabilityId: "reviews.fetch",
-      capability: capabilityRegistry["reviews.fetch"],
-      input: { externalRef: input.target.externalRef, limit: 6 },
-      plan,
-      adapters: runtime.adapters.reviews,
-      context: {
-        campaignId: input.campaignId,
-        runId: input.runId,
-        targetId: input.target.id,
-      },
-      ledger: runtime.ledger,
-      replans: runtime.replans,
-    });
-    if (!reviews.ok) {
-      return { ...reviews, targetId: input.target.id };
-    }
-    plan = reviews.plan;
-    documents.push({
-      kind: "reviews",
-      sourceRef: reviews.data.sourceRef,
-      reviews: reviews.data.reviews,
-    });
     await runtime.store.updateTarget(input.target.id, "observed");
 
     const extracted = await runtime.agents.extract.generate(
@@ -209,7 +245,7 @@ export async function processBusinessLocalTarget(
     );
     const signals = await runtime.store.saveSignals(verified.signals);
     const assessed = await runtime.agents.assess.generate(
-      assessmentPrompt({
+      assessmentPrompt(motionId, {
         campaignId: input.campaignId,
         runId: input.runId,
         targetId: input.target.id,
@@ -226,7 +262,17 @@ export async function processBusinessLocalTarget(
       isFit: assessment.isFit,
       reason: assessment.reason,
       droppedCount: verified.droppedCount,
-      rubric: assessmentRubric(getMotion("business.local")),
+      rubric: assessmentRubric(getMotion(motionId)),
+    });
+    await runtime.events.emit({
+      type: "assessment.recorded",
+      campaignId: input.campaignId,
+      runId: input.runId,
+      targetId: input.target.id,
+      score: assessment.score,
+      isFit: assessment.isFit,
+      reason: assessment.reason,
+      droppedCount: verified.droppedCount,
     });
     await runtime.store.updateTarget(
       input.target.id,
@@ -248,7 +294,7 @@ export async function processBusinessLocalTarget(
       capability: capabilityRegistry["people.find"],
       input: {
         externalRef: input.target.externalRef,
-        channels: [...getMotion("business.local").channels],
+        channels: [...getMotion(motionId).channels],
       },
       plan,
       adapters: runtime.adapters.people,
@@ -310,15 +356,9 @@ export async function processBusinessLocalTarget(
       { kind: "require_approval", action: "send", approved: false },
       {
         kind: "consent_policy",
-        motionId: "business.local",
-        consentBasis: "legitimate_interest",
-        basisByMotion: {
-          creator: "explicit_opt_in",
-          "business.local": "legitimate_interest",
-          "business.online": "legitimate_interest",
-          "consumer.ads": "legitimate_interest",
-          "consumer.email": "explicit_opt_in",
-        },
+        motionId,
+        consentBasis: getMotion(motionId).consentPolicy,
+        basisByMotion: consentBasisByMotion(),
       },
     ]);
     if (policy.decision !== "require_approval") {
@@ -334,7 +374,7 @@ export async function processBusinessLocalTarget(
       channel,
       address,
       displayName: person.name,
-      consentBasis: "legitimate_interest",
+      consentBasis: getMotion(motionId).consentPolicy,
       verified: true,
     });
     await runtime.store.saveMessage({
@@ -367,9 +407,10 @@ export async function processBusinessLocalTarget(
 }
 
 /** Executes the motion's single discovery call and persists its deduplicated targets. */
-export async function discoverBusinessLocal(
-  input: BusinessLocalInput,
-  runtime: BusinessLocalRuntime,
+export async function discoverOrganization(
+  motionId: OrganizationMotionId,
+  input: OrganizationInput,
+  runtime: OrganizationRuntime,
 ): Promise<
   | {
       readonly ok: true;
@@ -378,26 +419,55 @@ export async function discoverBusinessLocal(
     }
   | { readonly ok: false; readonly reason: string }
 > {
-  const discovered = await executePlannedCapability({
-    capabilityId: "geo.query",
-    capability: capabilityRegistry["geo.query"],
-    input: {
-      query: input.spec.targetCriteria.join(" "),
-      latitude: 12.9716,
-      longitude: 77.5946,
-      radiusKm: 30,
-      limit: 60,
-    },
-    plan: input.plan,
-    adapters: runtime.adapters.geo,
-    context: {
-      campaignId: input.campaignId,
-      runId: input.runId,
-      targetId: null,
-    },
-    ledger: runtime.ledger,
-    replans: runtime.replans,
-  });
+  const context = {
+    campaignId: input.campaignId,
+    runId: input.runId,
+    targetId: null,
+  };
+  const discoveryCapability = getMotion(motionId).discovery[0];
+  let discovered: OrganizationDiscoveryResult;
+  if (discoveryCapability === "geo.query") {
+    discovered = await executePlannedCapability({
+      capabilityId: "geo.query",
+      capability: capabilityRegistry["geo.query"],
+      input: {
+        query: input.spec.targetCriteria.join(" "),
+        locality: input.spec.geography,
+        latitude: 0,
+        longitude: 0,
+        radiusKm: 30,
+        limit: 60,
+      },
+      plan: input.plan,
+      adapters: runtime.adapters.geo,
+      context,
+      ledger: runtime.ledger,
+      replans: runtime.replans,
+    });
+  } else if (discoveryCapability === "db.query") {
+    discovered = await executePlannedCapability({
+      capabilityId: "db.query",
+      capability: capabilityRegistry["db.query"],
+      input: {
+        entityKind: "company",
+        filters: {
+          category: input.spec.targetCriteria[0],
+          locality: input.spec.geography,
+        },
+        limit: 60,
+      },
+      plan: input.plan,
+      adapters: runtime.adapters.db,
+      context,
+      ledger: runtime.ledger,
+      replans: runtime.replans,
+    });
+  } else {
+    return {
+      ok: false,
+      reason: `${motionId} declares unsupported discovery capability ${discoveryCapability}.`,
+    };
+  }
   if (!discovered.ok) {
     return discovered;
   }
@@ -405,6 +475,7 @@ export async function discoverBusinessLocal(
     discovered.data.targets.map((target) => ({
       ...target,
       campaignId: input.campaignId,
+      motionId,
       relationship: "prospect",
     })),
   );
@@ -412,11 +483,12 @@ export async function discoverBusinessLocal(
 }
 
 /** Discovers once, persists once, then runs independent targets at concurrency eight. */
-export async function runBusinessLocal(
-  input: BusinessLocalInput,
-  runtime: BusinessLocalRuntime,
+export async function runOrganization(
+  motionId: OrganizationMotionId,
+  input: OrganizationInput,
+  runtime: OrganizationRuntime,
 ): Promise<readonly TargetResult[]> {
-  const discovered = await discoverBusinessLocal(input, runtime);
+  const discovered = await discoverOrganization(motionId, input, runtime);
   if (!discovered.ok) {
     return [
       { ok: false, targetId: input.campaignId, reason: discovered.reason },
@@ -433,7 +505,8 @@ export async function runBusinessLocal(
       cursor += 1;
       if (target !== undefined) {
         results.push(
-          await processBusinessLocalTarget(
+          await processOrganizationTarget(
+            motionId,
             { ...input, plan: activePlan, target },
             runtime,
           ),

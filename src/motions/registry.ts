@@ -1,4 +1,5 @@
 import type { CapabilityId } from "../contracts/capabilities";
+import { defineValues } from "../contracts/enums";
 import {
   consumerAdsRubric,
   consumerEmailRubric,
@@ -11,6 +12,7 @@ import { defineMotion, type MotionDefinition } from "./types";
 
 export const motionRegistry = {
   creator: defineMotion("creator", {
+    requiresWorkspaceSource: null,
     targetKind: "person",
     discovery: ["db.query"],
     discoveryTrigger: null,
@@ -23,6 +25,7 @@ export const motionRegistry = {
     consentPolicy: "explicit_opt_in",
   }),
   "business.local": defineMotion("business.local", {
+    requiresWorkspaceSource: null,
     targetKind: "organization",
     discovery: ["geo.query"],
     discoveryTrigger: null,
@@ -35,6 +38,7 @@ export const motionRegistry = {
     consentPolicy: "legitimate_interest",
   }),
   "business.online": defineMotion("business.online", {
+    requiresWorkspaceSource: null,
     targetKind: "organization",
     discovery: ["db.query"],
     discoveryTrigger: null,
@@ -47,6 +51,7 @@ export const motionRegistry = {
     consentPolicy: "legitimate_interest",
   }),
   "consumer.ads": defineMotion("consumer.ads", {
+    requiresWorkspaceSource: "first_party_customers",
     targetKind: "segment",
     discovery: ["segment.build"],
     discoveryTrigger: null,
@@ -59,6 +64,7 @@ export const motionRegistry = {
     consentPolicy: "legitimate_interest",
   }),
   "consumer.email": defineMotion("consumer.email", {
+    requiresWorkspaceSource: "first_party_customers",
     targetKind: "person",
     discovery: [],
     discoveryTrigger: "customer_base",
@@ -72,6 +78,11 @@ export const motionRegistry = {
   }),
 } satisfies Readonly<Record<MotionId, MotionDefinition>>;
 
+export const organizationMotionIds = defineValues(
+  "business.local",
+  "business.online",
+);
+
 export function getMotion<Id extends MotionId>(id: Id) {
   return motionRegistry[id];
 }
@@ -81,4 +92,17 @@ export function declaredCapabilities(): CapabilityId[] {
     ...motion.discovery,
     ...motion.observation,
   ]);
+}
+
+export function consentBasisByMotion(): Record<
+  MotionId,
+  MotionDefinition["consentPolicy"]
+> {
+  return {
+    creator: motionRegistry.creator.consentPolicy,
+    "business.local": motionRegistry["business.local"].consentPolicy,
+    "business.online": motionRegistry["business.online"].consentPolicy,
+    "consumer.ads": motionRegistry["consumer.ads"].consentPolicy,
+    "consumer.email": motionRegistry["consumer.email"].consentPolicy,
+  };
 }

@@ -2,24 +2,27 @@ import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import {
-  ApprovalSchema,
   CampaignSpecSchema,
   CompileObjectiveInputSchema,
   PlanDataSchema,
   SynthesizeDataSchema,
   TargetSchema,
+  WorkspaceSourceSchema,
 } from "../../contracts";
+import { organizationMotionIds } from "../../motions";
+import type { OrganizationMotionId } from "../../motions/types";
 import {
-  type BusinessLocalRuntime,
-  discoverBusinessLocal,
-  processBusinessLocalTarget,
-} from "./business-local";
+  discoverOrganization,
+  type OrganizationRuntime,
+  processOrganizationTarget,
+} from "./organization";
 import type { WorkflowEventSink } from "./replan";
 
 const CampaignWorkflowInputSchema = CompileObjectiveInputSchema.extend({
   runId: z.uuid(),
   planId: z.uuid(),
   workspaceName: z.string().min(1),
+  connectedSources: z.array(WorkspaceSourceSchema),
 });
 
 const CampaignContextSchema = CampaignWorkflowInputSchema.extend({
@@ -61,27 +64,23 @@ export interface CampaignWorkflowServices {
     readonly runId: string;
     readonly planId: string;
     readonly spec: z.output<typeof CampaignSpecSchema>;
+    readonly connectedSources: z.output<typeof WorkspaceSourceSchema>[];
   }): Promise<z.output<typeof PlanDataSchema>>;
+  recordCompiledSpec(input: {
+    readonly campaignId: string;
+    readonly name: string;
+    readonly budget: z.output<typeof CampaignSpecSchema>["budget"];
+    readonly spec: z.output<typeof CampaignSpecSchema>;
+  }): Promise<void>;
   businessRuntime(
     input: PlannedCampaign,
     events?: WorkflowEventSink,
-  ): BusinessLocalRuntime;
+  ): OrganizationRuntime;
   runCreator(input: PlannedCampaign): Promise<{
     readonly ok: boolean;
     readonly targetIds: readonly string[];
     readonly failures: readonly string[];
   }>;
-  recordPlanDecision(input: {
-    readonly campaignId: string;
-    readonly runId: string;
-    readonly planId: string;
-    readonly approved: boolean;
-    readonly reviewerId: string;
-  }): Promise<void>;
-  requestPlanApproval(input: {
-    readonly campaignId: string;
-    readonly runId: string;
-  }): Promise<z.output<typeof ApprovalSchema>>;
   synthesize(input: {
     readonly campaignId: string;
     readonly runId: string;
@@ -93,12 +92,29 @@ function reason(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown motion failure.";
 }
 
-function streamReplanEvents(
+function streamWorkflowEvents(
   input: PlannedCampaign,
   write: (value: unknown) => Promise<void>,
 ): WorkflowEventSink {
   return {
     async emit(event) {
+      if (event.type === "assessment.recorded") {
+        await write({
+          id: randomUUID(),
+          runId: event.runId,
+          campaignId: event.campaignId,
+          occurredAt: new Date().toISOString(),
+          type: event.type,
+          data: {
+            targetId: event.targetId,
+            score: event.score,
+            isFit: event.isFit,
+            reason: event.reason,
+            droppedCount: event.droppedCount,
+          },
+        });
+        return;
+      }
       if (event.type !== "replan_started") {
         return;
       }
@@ -118,12 +134,13 @@ function streamReplanEvents(
   };
 }
 
-/** Creates the independently resumable target workflow used by business.local foreach. */
+/** Creates the independently resumable target workflow used by organization foreach. */
 export function createTargetWorkflow(
+  motionId: OrganizationMotionId,
   runtimeFor: (
     input: PlannedCampaign,
     events?: WorkflowEventSink,
-  ) => BusinessLocalRuntime,
+  ) => OrganizationRuntime,
 ) {
   const targetStep = createStep({
     id: "target-pipeline",
@@ -131,18 +148,19 @@ export function createTargetWorkflow(
     outputSchema: TargetResultSchema,
     execute: ({ inputData, writer }) => {
       const planned = PlannedCampaignSchema.parse(inputData);
-      return processBusinessLocalTarget(
+      return processOrganizationTarget(
+        motionId,
         inputData,
         runtimeFor(
           planned,
-          streamReplanEvents(planned, (value) => writer.write(value)),
+          streamWorkflowEvents(planned, (value) => writer.write(value)),
         ),
       );
     },
   });
 
   return createWorkflow({
-    id: "target-workflow",
+    id: `${motionId}-target-workflow`,
     inputSchema: TargetJobSchema,
     outputSchema: TargetResultSchema,
   })
@@ -150,23 +168,31 @@ export function createTargetWorkflow(
     .commit();
 }
 
-/** Creates business.local with one discovery followed by nested per-target workflows. */
-export function createBusinessLocalWorkflow(
+/** Creates an organization motion with discovery and isolated target pipelines. */
+export function createOrganizationWorkflow<const WorkflowId extends string>(
+  motionId: OrganizationMotionId,
+  workflowId: WorkflowId,
   runtimeFor: (
     input: PlannedCampaign,
     events?: WorkflowEventSink,
-  ) => BusinessLocalRuntime,
+  ) => OrganizationRuntime,
 ) {
   const discoverStep = createStep({
     id: "discover-step",
     inputSchema: PlannedCampaignSchema,
     outputSchema: z.array(TargetJobSchema),
     execute: async ({ inputData, writer }) => {
-      const result = await discoverBusinessLocal(
+      if (
+        !inputData.plan.motions.some((motion) => motion.motionId === motionId)
+      ) {
+        return [];
+      }
+      const result = await discoverOrganization(
+        motionId,
         inputData,
         runtimeFor(
           inputData,
-          streamReplanEvents(inputData, (value) => writer.write(value)),
+          streamWorkflowEvents(inputData, (value) => writer.write(value)),
         ),
       );
       if (!result.ok) {
@@ -181,28 +207,33 @@ export function createBusinessLocalWorkflow(
   });
 
   return createWorkflow({
-    id: "business-local-workflow",
+    id: workflowId,
     inputSchema: PlannedCampaignSchema,
     outputSchema: z.array(TargetResultSchema),
   })
     .then(discoverStep)
-    .foreach(createTargetWorkflow(runtimeFor), { concurrency: 8 })
+    .foreach(createTargetWorkflow(motionId, runtimeFor), { concurrency: 8 })
     .commit();
 }
 
 /**
- * Composes objective compilation, T5 planning, durable approval, isolated motion
- * fan-out, and T8 synthesis into the campaign execution spine.
+ * Composes objective compilation, planning, selected-motion fan-out, and synthesis.
  */
 export function createCampaignWorkflow(services: CampaignWorkflowServices) {
   const compileObjectiveStep = createStep({
     id: "compile-objective-step",
     inputSchema: CampaignWorkflowInputSchema,
     outputSchema: CampaignContextSchema,
-    execute: async ({ inputData }) => ({
-      ...inputData,
-      spec: await services.compileObjective(inputData),
-    }),
+    execute: async ({ inputData }) => {
+      const spec = await services.compileObjective(inputData);
+      await services.recordCompiledSpec({
+        campaignId: inputData.campaignId,
+        name: spec.name,
+        budget: spec.budget,
+        spec,
+      });
+      return { ...inputData, spec };
+    },
   });
   const planStep = createStep({
     id: "plan-step",
@@ -214,6 +245,7 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
         runId: inputData.runId,
         planId: inputData.planId,
         spec: inputData.spec,
+        connectedSources: inputData.connectedSources,
       });
       const envelope = () => ({
         id: randomUUID(),
@@ -258,64 +290,16 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
       return { ...inputData, plan };
     },
   });
-  const approvalGate = createStep({
-    id: "approval-gate",
-    inputSchema: PlannedCampaignSchema,
-    outputSchema: PlannedCampaignSchema,
-    resumeSchema: z.object({
-      approved: z.boolean(),
-      reviewerId: z.string().min(1),
-    }),
-    suspendSchema: z.object({
-      reason: z.string(),
-      plan: PlanDataSchema,
-      approval: ApprovalSchema,
-    }),
-    execute: async ({ inputData, resumeData, suspend, bail, writer }) => {
-      if (resumeData?.approved === false) {
-        await services.recordPlanDecision({
-          campaignId: inputData.campaignId,
-          runId: inputData.runId,
-          planId: inputData.planId,
-          approved: false,
-          reviewerId: resumeData.reviewerId,
-        });
-        return bail({ reason: "The campaign plan was rejected." });
-      }
-      if (resumeData?.approved !== true) {
-        const approval = await services.requestPlanApproval({
-          campaignId: inputData.campaignId,
-          runId: inputData.runId,
-        });
-        await writer.write({
-          id: randomUUID(),
-          runId: inputData.runId,
-          campaignId: inputData.campaignId,
-          occurredAt: new Date().toISOString(),
-          type: "approval.required",
-          data: { approval },
-        });
-        return suspend({
-          reason: "Approve the ranked bindings and declined motions.",
-          plan: inputData.plan,
-          approval,
-        });
-      }
-      await services.recordPlanDecision({
-        campaignId: inputData.campaignId,
-        runId: inputData.runId,
-        planId: inputData.planId,
-        approved: true,
-        reviewerId: resumeData.reviewerId,
-      });
-      return inputData;
-    },
-  });
   const creatorStep = createStep({
     id: "creator-workflow",
     inputSchema: PlannedCampaignSchema,
     outputSchema: MotionResultSchema,
     execute: async ({ inputData }) => {
+      if (
+        !inputData.plan.motions.some((motion) => motion.motionId === "creator")
+      ) {
+        return { ok: true, targetIds: [], failures: [] };
+      }
       try {
         const result = await services.runCreator(inputData);
         return {
@@ -328,13 +312,21 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
       }
     },
   });
-  const businessLocalWorkflow = createBusinessLocalWorkflow(
+  const businessLocalWorkflow = createOrganizationWorkflow(
+    organizationMotionIds[0],
+    "business-local-workflow",
+    services.businessRuntime,
+  );
+  const businessOnlineWorkflow = createOrganizationWorkflow(
+    organizationMotionIds[1],
+    "business-online-workflow",
     services.businessRuntime,
   );
   const synthesizeStep = createStep({
     id: "synthesize-step",
     inputSchema: z.object({
       "business-local-workflow": z.array(TargetResultSchema),
+      "business-online-workflow": z.array(TargetResultSchema),
       "creator-workflow": MotionResultSchema,
     }),
     outputSchema: SynthesizeDataSchema,
@@ -343,10 +335,17 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
       const localIds = inputData["business-local-workflow"].flatMap((target) =>
         target.ok ? [target.targetId] : [],
       );
+      const onlineIds = inputData["business-online-workflow"].flatMap(
+        (target) => (target.ok ? [target.targetId] : []),
+      );
       return services.synthesize({
         campaignId: initial.campaignId,
         runId: initial.runId,
-        targetIds: [...localIds, ...inputData["creator-workflow"].targetIds],
+        targetIds: [
+          ...localIds,
+          ...onlineIds,
+          ...inputData["creator-workflow"].targetIds,
+        ],
       });
     },
   });
@@ -358,8 +357,7 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
   })
     .then(compileObjectiveStep)
     .then(planStep)
-    .then(approvalGate)
-    .parallel([businessLocalWorkflow, creatorStep])
+    .parallel([businessLocalWorkflow, businessOnlineWorkflow, creatorStep])
     .then(synthesizeStep)
     .commit();
 }

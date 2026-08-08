@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { z } from "zod";
 import {
   approvalStatuses,
   campaignStatuses,
@@ -28,6 +29,7 @@ import {
   targetKinds,
   targetRelationships,
   targetStatuses,
+  type WorkspaceSourceSchema,
 } from "../contracts/enums";
 import type { EvidencePayload, TargetPayload } from "../contracts/payloads";
 
@@ -65,6 +67,10 @@ const timestamps = {
 export const workspace = pgTable("workspace", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  connectedSources: jsonb("connected_sources")
+    .$type<z.output<typeof WorkspaceSourceSchema>[]>()
+    .default([])
+    .notNull(),
   ...timestamps,
 });
 
@@ -188,6 +194,7 @@ export const target = pgTable(
     campaignId: uuid("campaign_id")
       .notNull()
       .references(() => campaign.id, { onDelete: "cascade" }),
+    motionId: motionIdEnum("motion_id").default("business.local").notNull(),
     kind: targetKindEnum("kind").notNull(),
     relationship: targetRelationshipEnum("relationship").notNull(),
     status: targetStatusEnum("status").default("discovered").notNull(),

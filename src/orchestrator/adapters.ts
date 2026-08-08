@@ -1,4 +1,11 @@
 import {
+  generatedMarketDbAdapter,
+  generatedMarketGeoAdapter,
+  generatedMarketPeopleAdapter,
+  generatedMarketReviewsAdapter,
+  generatedMarketWebAdapter,
+} from "../adapters/generated";
+import {
   cohortSegmentSimAdapter,
   indexDbSimAdapter,
   marketGeoSimAdapter,
@@ -24,7 +31,24 @@ function simulationAdapter(
   };
 }
 
-/** Metadata for the simulation adapters currently connected to the workspace. */
+function generatedAdapter(
+  adapter:
+    | typeof generatedMarketDbAdapter
+    | typeof generatedMarketGeoAdapter
+    | typeof generatedMarketPeopleAdapter
+    | typeof generatedMarketReviewsAdapter
+    | typeof generatedMarketWebAdapter,
+): RankingAdapter {
+  return {
+    id: adapter.id,
+    provides: adapter.provides,
+    mode: "generated",
+    unitCost: adapter.unitCost,
+    profile: adapter.profile,
+  };
+}
+
+/** Metadata for the simulation and generated adapters available to ranking. */
 export const defaultRankingAdapters: readonly RankingAdapter[] = [
   simulationAdapter(
     marketGeoSimAdapter.adapterId,
@@ -32,24 +56,29 @@ export const defaultRankingAdapters: readonly RankingAdapter[] = [
     marketGeoSimAdapter.unitCost,
     marketGeoSimAdapter.profile,
   ),
+  generatedAdapter(generatedMarketGeoAdapter),
   simulationAdapter(
     indexDbSimAdapter.adapterId,
     "db.query",
     indexDbSimAdapter.unitCost,
     indexDbSimAdapter.profile,
   ),
+  generatedAdapter(generatedMarketDbAdapter),
+  generatedAdapter(generatedMarketWebAdapter),
   simulationAdapter(
     marketWebSimAdapter.adapterId,
     "web.fetch",
     marketWebSimAdapter.unitCost,
     marketWebSimAdapter.profile,
   ),
+  generatedAdapter(generatedMarketReviewsAdapter),
   simulationAdapter(
     marketReviewsSimAdapter.adapterId,
     "reviews.fetch",
     marketReviewsSimAdapter.unitCost,
     marketReviewsSimAdapter.profile,
   ),
+  generatedAdapter(generatedMarketPeopleAdapter),
   simulationAdapter(
     marketPeopleSimAdapter.adapterId,
     "people.find",

@@ -7,7 +7,7 @@ import {
 } from "../contracts/steps";
 import type { StructuredAgent } from "../mastra/agents/runner";
 import { getMotion } from "../motions";
-import type { MotionId } from "../motions/types";
+import type { MotionId, WorkspaceSource } from "../motions/types";
 import { defaultRankingAdapters } from "./adapters";
 import { rankAdapters } from "./rank";
 import type {
@@ -20,8 +20,6 @@ import type {
 } from "./types";
 import { deriveRankingWeights } from "./weights";
 
-const NO_CUSTOMER_DATA_REASON =
-  "no first-party customer data source is connected; segment.build has no warehouse to build from";
 const MAX_REPLANS = 2;
 
 export interface PlanCampaignOptions {
@@ -58,6 +56,7 @@ interface BuildPlanInput {
   readonly weightsRationale: string;
   readonly requiredThroughputPerMinute: number;
   readonly replanOf: PlanData["replanOf"];
+  readonly connectedSources: readonly WorkspaceSource[];
   readonly refusal?: ReplanRefusal;
 }
 
@@ -100,23 +99,22 @@ function bindWinner<C extends CapabilityId>(
     : result;
 }
 
-function declineReason(motionId: MotionId): string | null {
-  switch (motionId) {
-    case "consumer.ads":
-      return NO_CUSTOMER_DATA_REASON;
-    case "consumer.email":
-      return "no first-party customer data source is connected; customer_base cannot be resolved";
-    case "business.online":
-      return "no first-party company data source is connected; db.query has no connected company index";
-    case "business.local":
-    case "creator":
-      return null;
-  }
-}
-
 function capabilitiesForMotion(motionId: MotionId): readonly CapabilityId[] {
   const motion = getMotion(motionId);
   return [...motion.discovery, ...motion.observation];
+}
+
+function missingWorkspaceSourceReason(motionId: MotionId): string | null {
+  const motion = getMotion(motionId);
+  const source = motion.requiresWorkspaceSource;
+  if (source === null) {
+    return null;
+  }
+  if (motion.discovery.includes("segment.build")) {
+    return "no first-party customer data source is connected; segment.build has no warehouse to build from";
+  }
+  const dependency = motion.discoveryTrigger ?? motion.discovery[0];
+  return `no first-party customer data source is connected; ${dependency} cannot be resolved`;
 }
 
 function requestedCategories(
@@ -229,28 +227,42 @@ function rankedBinding(
 }
 
 function buildPlan(input: BuildPlanInput): OrchestratorResult {
-  const selected = input.spec.motions.filter(
-    (motionId) => declineReason(motionId) === null,
-  );
-  if (selected.length === 0) {
-    return {
-      ok: false,
-      reason:
-        "Every requested motion was declined because its required data source is not connected.",
-    };
-  }
   const categories = requestedCategories(input.spec, input.adapters);
-  const motions: PlanData["motions"] = [];
-  for (const [index, motionId] of selected.entries()) {
+  const evaluated = input.spec.motions.map((motionId) => {
+    const requiredSource = getMotion(motionId).requiresWorkspaceSource;
+    if (
+      requiredSource !== null &&
+      !input.connectedSources.includes(requiredSource)
+    ) {
+      return {
+        motionId,
+        reason: missingWorkspaceSourceReason(motionId),
+        bindings: [],
+      };
+    }
     const bindings: PlanData["motions"][number]["bindings"] = [];
-    const capabilities = capabilitiesForMotion(motionId);
-    for (const capabilityId of capabilities) {
+    for (const capabilityId of capabilitiesForMotion(motionId)) {
       const result = rankedBinding(capabilityId, input, categories);
       if (!result.ok) {
-        return result;
+        return { motionId, reason: result.reason, bindings: [] };
       }
       bindings.push(result.binding);
     }
+    return { motionId, reason: null, bindings };
+  });
+  const selected = evaluated.filter((motion) => motion.reason === null);
+  if (selected.length === 0) {
+    return {
+      ok: false,
+      reason: `Every requested motion was declined: ${evaluated
+        .map((motion) => `${motion.motionId}: ${motion.reason}`)
+        .join("; ")}`,
+    };
+  }
+  const motions: PlanData["motions"] = [];
+  for (const [index, selectedMotion] of selected.entries()) {
+    const motionId = selectedMotion.motionId;
+    const capabilities = capabilitiesForMotion(motionId);
     motions.push({
       motionId,
       capabilities: [...capabilities],
@@ -266,7 +278,7 @@ function buildPlan(input: BuildPlanInput): OrchestratorResult {
       ),
       dependsOn: [],
       rationale: planRationale(motionId),
-      bindings,
+      bindings: selectedMotion.bindings,
       declined:
         getMotion(motionId).contactModel === "individual"
           ? [
@@ -300,8 +312,7 @@ function buildPlan(input: BuildPlanInput): OrchestratorResult {
       },
     ],
     budget: input.spec.budget,
-    declinedMotions: input.spec.motions.flatMap((motionId) => {
-      const reason = declineReason(motionId);
+    declinedMotions: evaluated.flatMap(({ motionId, reason }) => {
       return reason === null ? [] : [{ motionId, reason }];
     }),
     replanOf: input.replanOf,
@@ -348,6 +359,7 @@ export async function planCampaign(
         ? 1
         : options.requiredThroughputPerMinute,
     replanOf: null,
+    connectedSources: parsed.data.connectedSources,
   });
 }
 
@@ -373,6 +385,17 @@ function originalWeights(plan: PlanData): RankingWeights | null {
     }
   }
   return null;
+}
+
+function connectedSourcesForPlan(plan: PlanData): WorkspaceSource[] {
+  const sources = new Set<WorkspaceSource>();
+  for (const motion of plan.motions) {
+    const source = getMotion(motion.motionId).requiresWorkspaceSource;
+    if (source !== null) {
+      sources.add(source);
+    }
+  }
+  return [...sources];
 }
 
 /** Re-ranks a refused plan once, with a hard maximum of two re-plans per run. */
@@ -445,6 +468,7 @@ export async function replanCampaign(
       trigger: input.refusal.trigger,
       reason: input.refusal.reason,
     },
+    connectedSources: connectedSourcesForPlan(previous.data),
     refusal: input.refusal,
   });
 }

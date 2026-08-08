@@ -1,0 +1,2 @@
+ALTER TABLE "target" ADD COLUMN "motion_id" "motion_id" DEFAULT 'business.local' NOT NULL;--> statement-breakpoint
+ALTER TABLE "workspace" ADD COLUMN "connected_sources" jsonb DEFAULT '[]'::jsonb NOT NULL;

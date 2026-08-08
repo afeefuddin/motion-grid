@@ -17,8 +17,9 @@ export const objectiveCompiler = new Agent({
   model: heavyAgentModel,
   instructions: `Compile the supplied objective into a precise campaign specification.
 Choose only creator, business.local, business.online, consumer.ads, or consumer.email motions.
-Preserve the supplied USD operating budget and INR commitment budget exactly.
-Infer geography, target criteria, allowed channels, and a measurable success metric from the objective.
+When a budget is supplied, preserve its USD operating and INR commitment amounts exactly.
+When no budget is supplied, infer both amounts from the objective's scale, geography, and selected motions.
+Infer a concise campaign name, geography, target criteria, allowed channels, and a measurable success metric from the objective.
 Do not add a motion or channel without support in the objective. Return only the structured result.`,
   defaultOptions: {
     maxSteps: 1,

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import {
+  DbQueryOutputSchema,
   GeoQueryOutputSchema,
   PeopleFindOutputSchema,
   ReviewsFetchOutputSchema,
@@ -21,7 +22,7 @@ after(async () => {
   }
 });
 
-test("cache hits make no model call and all four capabilities parse", async () => {
+test("cache hits make no model call and all generated capabilities parse", async () => {
   const cacheDirectory = await mkdtemp(
     path.join(os.tmpdir(), "motion-grid-generated-"),
   );
@@ -60,6 +61,13 @@ test("cache hits make no model call and all four capabilities parse", async () =
   );
   assert.equal(modelCalls, 1);
   assert.deepEqual(secondOutput, firstOutput);
+  DbQueryOutputSchema.parse(
+    await second.db.execute("db.query", {
+      entityKind: "company",
+      filters: { category: "dental clinics", locality: "Pune" },
+      limit: 20,
+    }),
+  );
 
   const target = firstOutput.targets.find(() => true);
   if (target === undefined || target.kind !== "organization") {
@@ -104,6 +112,33 @@ test("committed warm cache avoids the model", async () => {
   });
   assert.equal(world.businesses.length, 60);
   assert.equal(modelCalls, 0);
+});
+
+test("locality selects a distinct generated world", async () => {
+  const store = new GeneratedMarketStore({
+    cacheDirectory: defaultCacheDirectory,
+    generateWorld: async () => {
+      throw new Error("The committed Pune world should already be cached.");
+    },
+  });
+  const adapters = createGeneratedMarketAdapters(store);
+  const output = GeoQueryOutputSchema.parse(
+    await adapters.geo.execute("geo.query", {
+      query: "dental clinics",
+      locality: "Pune",
+      latitude: 0,
+      longitude: 0,
+      radiusKm: 30,
+      limit: 20,
+    }),
+  );
+  assert.ok(output.targets.length > 0);
+  for (const target of output.targets) {
+    assert.equal(target.kind, "organization");
+    if (target.kind === "organization") {
+      assert.match(target.payload.locality, /Pune/i);
+    }
+  }
 });
 
 test("artifact guard rejects findings before caching", async () => {

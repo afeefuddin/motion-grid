@@ -1,9 +1,16 @@
+import { eq } from "drizzle-orm";
+import {
+  generatedMarketDbAdapter,
+  generatedMarketGeoAdapter,
+  generatedMarketPeopleAdapter,
+  generatedMarketReviewsAdapter,
+  generatedMarketWebAdapter,
+} from "../../adapters/generated";
 import type { ToolCallWriter } from "../../capabilities";
 import { PlanDataSchema } from "../../contracts";
+import { db } from "../../db/client";
 import {
-  approvalRepo,
   assessmentRepo,
-  campaignRepo,
   contactRepo,
   messageRepo,
   planRepo,
@@ -12,6 +19,7 @@ import {
   targetRepo,
   toolCallRepo,
 } from "../../db/repositories";
+import { campaign, objective } from "../../db/schema";
 import {
   defaultRankingAdapters,
   planCampaign,
@@ -143,7 +151,11 @@ export function createDefaultWorkflowServices(
       return result.data;
     },
     async planCampaign(input) {
-      const result = await planCampaign(input);
+      const result = await planCampaign({
+        campaignId: input.campaignId,
+        spec: input.spec,
+        connectedSources: input.connectedSources,
+      });
       if (!result.ok) {
         throw new Error(result.reason);
       }
@@ -160,7 +172,7 @@ export function createDefaultWorkflowServices(
             previous === undefined || previous === null
               ? 1
               : previous.version + 1,
-          status: "pending_approval",
+          status: "approved",
           spec: planned,
         },
         planned.motions.map((motion) => ({
@@ -175,10 +187,28 @@ export function createDefaultWorkflowServices(
       await runRepo.attachPlan(input.runId, input.planId);
       return planned;
     },
+    async recordCompiledSpec(input) {
+      await db.transaction(async (transaction) => {
+        await transaction
+          .update(campaign)
+          .set({
+            name: input.name,
+            operatingBudgetCents: input.budget.operating.amountMinor,
+            commitBudgetCents: input.budget.commit.amountMinor,
+            updatedAt: new Date(),
+          })
+          .where(eq(campaign.id, input.campaignId));
+        await transaction
+          .update(objective)
+          .set({ compiledSpec: input.spec, updatedAt: new Date() })
+          .where(eq(objective.campaignId, input.campaignId));
+      });
+    },
     businessRuntime(input, runtimeEvents = events) {
       const existing = runtimes.get(input.runId);
       if (existing !== undefined) {
         existing.replans.setEvents(runtimeEvents);
+        existing.events = runtimeEvents;
         return existing;
       }
       const runtime = {
@@ -189,12 +219,14 @@ export function createDefaultWorkflowServices(
           draft: drafter,
         },
         adapters: {
-          geo: [geoSimAdapter],
-          web: [webSimAdapter],
-          reviews: [reviewsSimAdapter],
-          people: [peopleSimAdapter],
+          geo: [geoSimAdapter, generatedMarketGeoAdapter],
+          db: [dbSimAdapter, generatedMarketDbAdapter],
+          web: [webSimAdapter, generatedMarketWebAdapter],
+          reviews: [reviewsSimAdapter, generatedMarketReviewsAdapter],
+          people: [peopleSimAdapter, generatedMarketPeopleAdapter],
         },
         ledger: repositoryLedger,
+        events: runtimeEvents,
         replans: new ReplanController({
           campaignId: input.campaignId,
           runId: input.runId,
@@ -213,29 +245,6 @@ export function createDefaultWorkflowServices(
       return runCreatorMotion(input, this.businessRuntime(input), [
         dbSimAdapter,
       ]);
-    },
-    async recordPlanDecision(input) {
-      if (input.approved) {
-        await planRepo.approve(input.planId);
-        await campaignRepo.updateStatus(input.campaignId, "approved");
-      } else {
-        await campaignRepo.updateStatus(input.campaignId, "failed");
-      }
-    },
-    async requestPlanApproval(input) {
-      const requested = await approvalRepo.create({
-        campaignId: input.campaignId,
-        runId: input.runId,
-        messageId: null,
-        decision: "require_approval",
-        status: "pending",
-        reason: "Approve the ranked bindings and declined motions.",
-        requestedAt: new Date(),
-        decidedAt: null,
-        decidedBy: null,
-      });
-      await campaignRepo.updateStatus(input.campaignId, "pending_approval");
-      return requested;
     },
     async synthesize(input) {
       const result = await synthesizeStep(input);

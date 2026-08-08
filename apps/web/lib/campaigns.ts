@@ -25,7 +25,12 @@ import {
   target,
   workspace,
 } from "../../../src/db/schema";
-import { resumeCampaignWorkflow, startCampaignWorkflow } from "./workflows";
+import { startCampaignWorkflow } from "./workflows";
+
+const provisionalBudget = {
+  operating: { currency: "USD" as const, amountMinor: 100 },
+  commit: { currency: "INR" as const, amountMinor: 0 },
+};
 
 async function database() {
   const module = await import("../../../src/db/client");
@@ -50,7 +55,10 @@ export async function createCampaign(
   const planId = randomUUID();
   const created = await db.transaction(async (transaction) => {
     const workspaces = await transaction
-      .select({ name: workspace.name })
+      .select({
+        name: workspace.name,
+        connectedSources: workspace.connectedSources,
+      })
       .from(workspace)
       .where(eq(workspace.id, input.workspaceId))
       .limit(1);
@@ -65,10 +73,13 @@ export async function createCampaign(
       .insert(campaign)
       .values({
         workspaceId: input.workspaceId,
-        name: input.name,
+        name: input.name ?? "Compiling campaign",
         status: "planning",
-        operatingBudgetCents: input.budget.operating.amountMinor,
-        commitBudgetCents: input.budget.commit.amountMinor,
+        operatingBudgetCents:
+          input.budget?.operating.amountMinor ??
+          provisionalBudget.operating.amountMinor,
+        commitBudgetCents:
+          input.budget?.commit.amountMinor ?? provisionalBudget.commit.amountMinor,
       })
       .returning();
     const createdCampaign = CampaignSchema.parse(campaigns[0]);
@@ -93,6 +104,7 @@ export async function createCampaign(
       campaign: createdCampaign,
       objective: ObjectiveSchema.parse(objectives[0]),
       workspaceName: workspaces[0].name,
+      connectedSources: workspaces[0].connectedSources,
     };
   });
 
@@ -102,8 +114,9 @@ export async function createCampaign(
     runId: created.campaign.id,
     planId,
     workspaceName: created.workspaceName,
+    connectedSources: created.connectedSources,
     objective: input.objective,
-    budget: input.budget,
+    ...(input.budget === undefined ? {} : { budget: input.budget }),
   });
   return { campaign: created.campaign, objective: created.objective };
 }
@@ -235,13 +248,6 @@ export async function approveCampaign(
     .returning();
   const updatedCampaign = CampaignSchema.parse(campaigns[0]);
 
-  if (parsedApproval.runId !== null) {
-    await resumeCampaignWorkflow(
-      parsedApproval.runId,
-      input.approved,
-      input.decidedBy,
-    );
-  }
   return { approval: parsedApproval, campaignStatus: updatedCampaign.status };
 }
 
@@ -261,7 +267,10 @@ export async function startRun(input: z.output<typeof StartRunRequestSchema>) {
     throw new CampaignApiError("campaign_not_found", "Campaign not found.", 404);
   }
   const workspaces = await db
-    .select({ name: workspace.name })
+    .select({
+      name: workspace.name,
+      connectedSources: workspace.connectedSources,
+    })
     .from(workspace)
     .where(eq(workspace.id, campaigns[0].workspaceId))
     .limit(1);
@@ -296,6 +305,7 @@ export async function startRun(input: z.output<typeof StartRunRequestSchema>) {
     runId: createdRun.id,
     planId,
     workspaceName: workspaces[0].name,
+    connectedSources: workspaces[0].connectedSources,
     objective: objectives[0].prompt,
     budget: {
       operating: {

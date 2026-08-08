@@ -4,11 +4,14 @@ import type {
   ChannelSchema,
   MotionIdSchema,
   TargetKindSchema,
+  WorkspaceSourceSchema,
 } from "../contracts/enums";
 
 export type MotionId = z.output<typeof MotionIdSchema>;
+export type OrganizationMotionId = "business.local" | "business.online";
 export type TargetKind = z.output<typeof TargetKindSchema>;
 export type Channel = z.output<typeof ChannelSchema>;
+export type WorkspaceSource = z.output<typeof WorkspaceSourceSchema>;
 export type ContactModel = "individual" | "none";
 export type ConsentPolicy = "legitimate_interest" | "explicit_opt_in";
 export type RubricSource =
@@ -26,6 +29,7 @@ export interface RubricCriterion {
 }
 
 export interface MotionDefinition {
+  readonly requiresWorkspaceSource: WorkspaceSource | null;
   readonly targetKind: TargetKind;
   readonly discovery: readonly CapabilityId[];
   readonly discoveryTrigger: string | null;

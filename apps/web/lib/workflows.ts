@@ -50,17 +50,3 @@ function extractWorkflowEvent(value: unknown): SseEvent | null {
   }
   return null;
 }
-
-/** Resumes the campaign approval suspension with the user's decision. */
-export async function resumeCampaignWorkflow(
-  runId: string,
-  approved: boolean,
-  decidedBy: string,
-) {
-  const workflow = mastraClient.getWorkflow(CAMPAIGN_WORKFLOW_ID);
-  const run = await workflow.createRun({ runId });
-  return run.resume({
-    step: "approval-gate",
-    resumeData: { approved, reviewerId: decidedBy },
-  });
-}

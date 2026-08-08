@@ -47,7 +47,7 @@ const targetCandidate = {
   name: "Asha Wellness",
   payload: organizationPayload,
 };
-const workspace = { ...base, name: "MotionGrid" };
+const workspace = { ...base, name: "MotionGrid", connectedSources: [] };
 const campaign = {
   ...base,
   workspaceId: id,
@@ -94,6 +94,7 @@ const run = {
 const target = {
   ...base,
   campaignId: id,
+  motionId: "business.local",
   kind: "organization",
   relationship: "prospect",
   status: "discovered",
@@ -305,6 +306,7 @@ const addMany = (schemas: z.ZodType[], example: unknown) => {
 };
 
 addMany([contracts.MotionIdSchema], "business.local");
+addMany([contracts.WorkspaceSourceSchema], "first_party_customers");
 addMany([contracts.TargetKindSchema], "organization");
 addMany([contracts.TargetRelationshipSchema], "prospect");
 addMany([contracts.CampaignStatusSchema], "draft");
@@ -503,6 +505,7 @@ add(contracts.AdsPlanUnitCostSchema, {
 
 add(contracts.MoneySchema, { currency: "USD", amountMinor: 100 });
 add(contracts.DualBudgetSchema, budget);
+add(contracts.CampaignBudgetSchema, budget);
 add(contracts.CampaignSpecSchema, campaignSpec);
 add(contracts.CompileObjectiveInputSchema, {
   workspaceId: id,
@@ -528,7 +531,11 @@ add(contracts.PolicyRequirementSchema, {
   description: "Approve sends",
 });
 add(contracts.PlanDataSchema, planData);
-add(contracts.PlanInputSchema, { campaignId: id, spec: campaignSpec });
+add(contracts.PlanInputSchema, {
+  campaignId: id,
+  spec: campaignSpec,
+  connectedSources: [],
+});
 add(contracts.PlanOutputSchema, { ok: true, data: planData });
 add(contracts.DiscoverInputSchema, {
   campaignId: id,
@@ -842,6 +849,17 @@ const costTick = {
   },
 };
 const signalAdded = { ...eventBase, type: "signal.added", data: { signal } };
+const assessmentRecorded = {
+  ...eventBase,
+  type: "assessment.recorded",
+  data: {
+    targetId: id,
+    score: 0.8,
+    isFit: true,
+    reason: "Verified evidence meets the rubric.",
+    droppedCount: 1,
+  },
+};
 const edgeDiscovered = {
   ...eventBase,
   type: "edge.discovered",
@@ -889,6 +907,7 @@ add(contracts.ReplanStartedEventSchema, replanStarted);
 add(contracts.TargetStateEventSchema, targetState);
 add(contracts.CostTickEventSchema, costTick);
 add(contracts.SignalAddedEventSchema, signalAdded);
+add(contracts.AssessmentRecordedEventSchema, assessmentRecorded);
 add(contracts.EdgeDiscoveredEventSchema, edgeDiscovered);
 add(contracts.ApprovalRequiredEventSchema, approvalRequired);
 add(contracts.MessageSentEventSchema, messageSent);

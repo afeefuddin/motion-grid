@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { StructuredAgent } from "../mastra/agents/runner";
+import { defaultRankingAdapters } from "./adapters";
 import { planCampaign, replanCampaign } from "./plan";
 import { rankAdapters } from "./rank";
 import type {
@@ -152,7 +153,7 @@ test("malformed model weights are rejected and retried without normalization", a
 
 test("planning declines unsupported motions and records every ranked candidate", async () => {
   const result = await planCampaign(
-    { campaignId, spec },
+    { campaignId, spec, connectedSources: [] },
     {
       adapters: planningAdapters,
       weightsAgent: new SequenceAgent([validProposal]),
@@ -164,11 +165,11 @@ test("planning declines unsupported motions and records every ranked candidate",
   }
   assert.deepEqual(
     result.data.motions.map((motion) => motion.motionId),
-    ["business.local", "creator"],
+    ["business.online", "business.local", "creator"],
   );
   assert.deepEqual(
     result.data.declinedMotions.map((motion) => motion.motionId),
-    ["consumer.ads", "business.online", "consumer.email"],
+    ["consumer.ads", "consumer.email"],
   );
   const firstDecline = result.data.declinedMotions[0];
   assert.ok(firstDecline);
@@ -176,7 +177,9 @@ test("planning declines unsupported motions and records every ranked candidate",
     firstDecline.reason,
     "no first-party customer data source is connected; segment.build has no warehouse to build from",
   );
-  const local = result.data.motions[0];
+  const local = result.data.motions.find(
+    (motion) => motion.motionId === "business.local",
+  );
   assert.ok(local);
   const geo = local.bindings.find(
     (binding) => binding.capabilityId === "geo.query",
@@ -190,9 +193,44 @@ test("planning declines unsupported motions and records every ranked candidate",
   assert.match(local.rationale, /descending assessment score/);
 });
 
+test("default organization rankings contain scored sim and generated choices", async () => {
+  const organizationSpec: CampaignSpec = {
+    ...spec,
+    motions: ["business.local", "business.online"],
+    targetCriteria: ["dental clinic"],
+  };
+  const result = await planCampaign(
+    { campaignId, spec: organizationSpec, connectedSources: [] },
+    {
+      adapters: defaultRankingAdapters,
+      weightsAgent: new SequenceAgent([validProposal]),
+    },
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) {
+    return;
+  }
+  for (const motion of result.data.motions) {
+    for (const binding of motion.bindings) {
+      assert.ok(binding.candidates.length >= 2, binding.capabilityId);
+      assert.ok(
+        new Set(binding.candidates.map((candidate) => candidate.totalScore))
+          .size >= 2,
+        binding.capabilityId,
+      );
+      assert.ok(
+        binding.candidates.some((candidate) =>
+          /Not chosen|Coverage/.test(candidate.reason),
+        ),
+        binding.capabilityId,
+      );
+    }
+  }
+});
+
 test("budget refusal re-plans to the cheaper adapter and the cap stops loops", async () => {
   const initial = await planCampaign(
-    { campaignId, spec },
+    { campaignId, spec, connectedSources: [] },
     {
       adapters: planningAdapters,
       weightsAgent: new SequenceAgent([validProposal]),
@@ -220,7 +258,9 @@ test("budget refusal re-plans to the cheaper adapter and the cap stops loops", a
   if (!replanned.ok) {
     return;
   }
-  const local = replanned.data.motions[0];
+  const local = replanned.data.motions.find(
+    (motion) => motion.motionId === "business.local",
+  );
   assert.ok(local);
   const geo = local.bindings.find(
     (binding) => binding.capabilityId === "geo.query",
@@ -249,7 +289,7 @@ test("budget refusal re-plans to the cheaper adapter and the cap stops loops", a
 
 test("an unavailable binding remains visible but cannot win its re-plan", async () => {
   const initial = await planCampaign(
-    { campaignId, spec },
+    { campaignId, spec, connectedSources: [] },
     {
       adapters: planningAdapters,
       weightsAgent: new SequenceAgent([validProposal]),
@@ -278,7 +318,9 @@ test("an unavailable binding remains visible but cannot win its re-plan", async 
   if (!replanned.ok) {
     return;
   }
-  const local = replanned.data.motions[0];
+  const local = replanned.data.motions.find(
+    (motion) => motion.motionId === "business.local",
+  );
   assert.ok(local);
   const geo = local.bindings.find(
     (binding) => binding.capabilityId === "geo.query",

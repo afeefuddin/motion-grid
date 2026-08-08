@@ -16,6 +16,7 @@ import {
   PolicyDecisionSchema,
   TargetRelationshipSchema,
   TargetStatusSchema,
+  WorkspaceSourceSchema,
 } from "./enums";
 import {
   ConfidenceSchema,
@@ -46,13 +47,24 @@ export const DualBudgetSchema = z.object({
   }),
 });
 
+export const CampaignBudgetSchema = z.object({
+  operating: z.object({
+    currency: z.literal("USD"),
+    amountMinor: NonnegativeCentsSchema.min(100).max(10_000),
+  }),
+  commit: z.object({
+    currency: z.literal("INR"),
+    amountMinor: NonnegativeCentsSchema.max(50_000_000),
+  }),
+});
+
 export const CampaignSpecSchema = z.object({
   name: z.string().min(1),
   goal: z.string().min(1),
   geography: z.string().min(1),
   motions: z.array(MotionIdSchema).min(1),
   targetCriteria: z.array(z.string().min(1)).min(1),
-  budget: DualBudgetSchema,
+  budget: CampaignBudgetSchema,
   channels: z.array(ChannelSchema),
   successMetric: z.string().min(1),
 });
@@ -61,7 +73,7 @@ export const CompileObjectiveInputSchema = z.object({
   workspaceId: IdSchema,
   campaignId: IdSchema,
   objective: z.string().min(1),
-  budget: DualBudgetSchema,
+  budget: DualBudgetSchema.optional(),
 });
 export const CompileObjectiveOutputSchema = StepResult(CampaignSpecSchema);
 
@@ -149,6 +161,7 @@ export const PlanDataSchema = z.object({
 export const PlanInputSchema = z.object({
   campaignId: IdSchema,
   spec: CampaignSpecSchema,
+  connectedSources: z.array(WorkspaceSourceSchema),
 });
 export const PlanOutputSchema = StepResult(PlanDataSchema);
 

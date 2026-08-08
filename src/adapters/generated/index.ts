@@ -1,5 +1,6 @@
 export {
   createGeneratedMarketAdapters,
+  generatedMarketDbAdapter,
   generatedMarketGeoAdapter,
   generatedMarketPeopleAdapter,
   generatedMarketReviewsAdapter,
