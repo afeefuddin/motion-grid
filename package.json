@@ -16,7 +16,7 @@
     "generated:prewarm": "tsx scripts/prewarm-generated.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "deploy:mastra": "pnpm dlx mastra@1.23.0 deploy --env production --region iad"
+    "deploy:mastra": "pnpm dlx mastra@1.23.0 deploy --env production --region us"
   },
   "engines": {
     "node": ">=22"
