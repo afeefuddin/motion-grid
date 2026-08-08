@@ -70,6 +70,7 @@ const plan: PlanData = {
     },
   ],
   policies: [],
+  suggestedActions: [],
   budget: spec.budget,
   declinedMotions: [
     { motionId: "consumer.ads", reason: "No first-party data source." },
@@ -96,7 +97,20 @@ const emptyGeo: Adapter<"geo.query"> = {
     productionPath: "test",
   },
   async execute() {
-    return { targets: [] };
+    return {
+      targets: Array.from({ length: 10 }, (_, index) => ({
+        kind: "organization" as const,
+        externalRef: `business-${index}`,
+        name: `Business ${index}`,
+        payload: {
+          address: `${index}, Test Street, Bengaluru`,
+          locality: "Bengaluru",
+          categories: ["salon"],
+          websiteUrl: `https://business-${index}.example/`,
+          phone: `+91 90000 0000${index}`,
+        },
+      })),
+    };
   },
 };
 
@@ -134,6 +148,18 @@ test("selected motions run without plan approval and synthesis tolerates skipped
           async updateTarget() {},
         },
         agents: {
+          locationFinder: {
+            async generate() {
+              return {
+                object: {
+                  selections: Array.from({ length: 10 }, (_, index) => ({
+                    externalRef: `business-${index}`,
+                    reason: "Relevant and contactable.",
+                  })),
+                },
+              };
+            },
+          },
           extract: {
             async generate() {
               throw new Error("unused");
@@ -155,7 +181,14 @@ test("selected motions run without plan approval and synthesis tolerates skipped
             },
           },
         },
-        adapters: { geo: [emptyGeo], db: [], web: [], reviews: [], people: [] },
+        adapters: {
+          geo: [emptyGeo],
+          generatedGeo: emptyGeo,
+          db: [],
+          web: [],
+          reviews: [],
+          people: [],
+        },
         ledger: { async record() {} },
         events: { async emit() {} },
         replans: new ReplanController({

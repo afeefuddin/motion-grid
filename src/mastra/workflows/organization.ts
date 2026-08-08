@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Adapter } from "../../capabilities/adapter";
+import { executeCapability } from "../../capabilities/execute";
 import { capabilityRegistry } from "../../capabilities/registry";
 import type { TargetCandidateSchema } from "../../contracts/capabilities";
 import type {
@@ -34,6 +35,10 @@ import {
 } from "../../motions";
 import type { MotionId, OrganizationMotionId } from "../../motions/types";
 import { evaluatePolicies } from "../../policy";
+import {
+  selectReachableBusinesses,
+  type LocationFinderData,
+} from "../agents/location-finder";
 import type { StructuredAgent } from "../agents/runner";
 import {
   executePlannedCapability,
@@ -67,6 +72,7 @@ export interface OrganizationStore {
 }
 
 export interface OrganizationAgents {
+  readonly locationFinder: StructuredAgent<LocationFinderData>;
   readonly extract: StructuredAgent<ExtractEvidenceData>;
   readonly assess: StructuredAgent<AssessData>;
   readonly draft: StructuredAgent<DraftData>;
@@ -77,6 +83,7 @@ export interface OrganizationAgents {
 
 export interface OrganizationAdapters {
   readonly geo: readonly Adapter<"geo.query">[];
+  readonly generatedGeo: Adapter<"geo.query">;
   readonly db: readonly Adapter<"db.query">[];
   readonly web: readonly Adapter<"web.fetch">[];
   readonly reviews: readonly Adapter<"reviews.fetch">[];
@@ -503,8 +510,82 @@ export async function discoverOrganization(
   if (!discovered.ok) {
     return discovered;
   }
+  let candidates = discovered.data.targets;
+  if (motionId === "business.local") {
+    const select = async (available: readonly TargetCandidate[]) => {
+      const organizations = available.flatMap((candidate) =>
+        candidate.kind === "organization"
+          ? [
+              {
+                externalRef: candidate.externalRef,
+                name: candidate.name,
+                ...candidate.payload,
+              },
+            ]
+          : [],
+      );
+      const selections = await selectReachableBusinesses(
+        {
+          geography: input.spec.geography,
+          discoveryQuery: query,
+          targetCriteria: input.spec.targetCriteria,
+          channels: input.spec.channels,
+          requiredCount: 10,
+          candidates: organizations,
+        },
+        runtime.agents.locationFinder,
+      );
+      const byExternalRef = new Map(
+        available.map((candidate) => [candidate.externalRef, candidate]),
+      );
+      return selections.map(({ candidate }) => {
+        const selected = byExternalRef.get(candidate.externalRef);
+        if (selected === undefined) {
+          throw new Error(
+            `Location Finder lost selected business ${candidate.externalRef}.`,
+          );
+        }
+        return selected;
+      });
+    };
+
+    if (candidates.length < 10) {
+      const generated = await executeCapability({
+        context,
+        capability: capabilityRegistry["geo.query"],
+        binding: {
+          capabilityId: "geo.query",
+          adapterId: runtime.adapters.generatedGeo.id,
+          mode: runtime.adapters.generatedGeo.mode,
+        },
+        adapter: runtime.adapters.generatedGeo,
+        input: {
+          query,
+          locality: input.spec.geography,
+          latitude: 0,
+          longitude: 0,
+          radiusKm: 30,
+          limit: 60,
+        },
+        ledger: runtime.ledger,
+      });
+      const merged = new Map(
+        [...candidates, ...generated.targets].map((candidate) => [
+          candidate.externalRef,
+          candidate,
+        ]),
+      );
+      candidates = [...merged.values()];
+    }
+    if (candidates.length < 10) {
+      throw new Error(
+        `Location Finder has only ${candidates.length} available businesses; exactly 10 are required.`,
+      );
+    }
+    candidates = await select(candidates);
+  }
   const targets = await runtime.store.saveTargets(
-    discovered.data.targets.map((target) => ({
+    candidates.map((target) => ({
       ...target,
       campaignId: input.campaignId,
       motionId,

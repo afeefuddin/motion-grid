@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -32,6 +33,7 @@ import {
   type WorkspaceSourceSchema,
 } from "../contracts/enums";
 import type { EvidencePayload, TargetPayload } from "../contracts/payloads";
+import type { Business } from "../sim/schema";
 
 export const campaignStatusEnum = pgEnum("campaign_status", campaignStatuses);
 export const targetKindEnum = pgEnum("target_kind", targetKinds);
@@ -73,6 +75,25 @@ export const workspace = pgTable("workspace", {
     .notNull(),
   ...timestamps,
 });
+
+/** Reusable business catalog searched before campaign-specific targets exist. */
+export const marketBusiness = pgTable(
+  "market_business",
+  {
+    externalRef: text("external_ref").primaryKey(),
+    name: text("name").notNull(),
+    geography: text("geography").notNull(),
+    locality: text("locality").notNull(),
+    category: text("category").notNull(),
+    provenance: text("provenance").notNull(),
+    artifact: jsonb("artifact").$type<Business>().notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    index("market_business_geography_idx").on(table.geography),
+    index("market_business_category_idx").on(table.category),
+  ],
+);
 
 export const campaign = pgTable(
   "campaign",

@@ -60,6 +60,9 @@ export const marketGeoSimAdapter = {
           (input.locality === undefined ||
             business.locality
               .toLocaleLowerCase("en-IN")
+              .includes(input.locality.toLocaleLowerCase("en-IN")) ||
+            business.address
+              .toLocaleLowerCase("en-IN")
               .includes(input.locality.toLocaleLowerCase("en-IN"))) &&
           query.length > 0 &&
           query.every((term) =>

@@ -152,10 +152,23 @@ export const PolicyRequirementSchema = z.object({
   kind: z.string().min(1),
   description: z.string().min(1),
 });
+export const SuggestedActionSchema = z.object({
+  kind: z.enum([
+    "person_to_person",
+    "print_materials",
+    "door_to_door",
+    "community_partnership",
+  ]),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  rationale: z.string().min(1),
+  motionIds: z.array(MotionIdSchema).min(1),
+});
 export const PlanDataSchema = z.object({
   campaignId: IdSchema,
   motions: z.array(MotionPlanSchema).min(1),
   policies: z.array(PolicyRequirementSchema),
+  suggestedActions: z.array(SuggestedActionSchema).default([]),
   budget: DualBudgetSchema,
   declinedMotions: z.array(DeclinedMotionSchema).default([]),
   replanOf: ReplanReferenceSchema.nullable().default(null),
@@ -201,6 +214,22 @@ export const DiscoverDataSchema = z.object({
   targets: z.array(TargetCandidateSchema),
 });
 export const DiscoverOutputSchema = StepResult(DiscoverDataSchema);
+
+export const LocationFinderSelectionSchema = z.object({
+  externalRef: z.string().min(1),
+  reason: z.string().min(1),
+});
+export const LocationFinderDataSchema = z.object({
+  selections: z
+    .array(LocationFinderSelectionSchema)
+    .length(10)
+    .refine(
+      (selections) =>
+        new Set(selections.map((selection) => selection.externalRef)).size ===
+        selections.length,
+      { message: "Location Finder selections must be unique." },
+    ),
+});
 
 export const ObserveInputSchema = z.object({
   campaignId: IdSchema,

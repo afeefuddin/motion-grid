@@ -13,6 +13,7 @@ import {
   marketReviewsSimAdapter,
   marketWebSimAdapter,
 } from "../adapters/sim";
+import { catalogProfile } from "../adapters/catalog/profile";
 import type { CapabilityId } from "../contracts/capabilities";
 import type { RankingAdapter } from "./types";
 
@@ -54,7 +55,7 @@ export const defaultRankingAdapters: readonly RankingAdapter[] = [
     marketGeoSimAdapter.adapterId,
     "geo.query",
     marketGeoSimAdapter.unitCost,
-    marketGeoSimAdapter.profile,
+    catalogProfile(marketGeoSimAdapter.profile),
   ),
   generatedAdapter(generatedMarketGeoAdapter),
   simulationAdapter(
@@ -69,21 +70,21 @@ export const defaultRankingAdapters: readonly RankingAdapter[] = [
     marketWebSimAdapter.adapterId,
     "web.fetch",
     marketWebSimAdapter.unitCost,
-    marketWebSimAdapter.profile,
+    catalogProfile(marketWebSimAdapter.profile),
   ),
   generatedAdapter(generatedMarketReviewsAdapter),
   simulationAdapter(
     marketReviewsSimAdapter.adapterId,
     "reviews.fetch",
     marketReviewsSimAdapter.unitCost,
-    marketReviewsSimAdapter.profile,
+    catalogProfile(marketReviewsSimAdapter.profile),
   ),
   generatedAdapter(generatedMarketPeopleAdapter),
   simulationAdapter(
     marketPeopleSimAdapter.adapterId,
     "people.find",
     marketPeopleSimAdapter.unitCost,
-    marketPeopleSimAdapter.profile,
+    catalogProfile(marketPeopleSimAdapter.profile),
   ),
   simulationAdapter(
     cohortSegmentSimAdapter.adapterId,

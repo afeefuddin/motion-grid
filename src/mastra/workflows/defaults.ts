@@ -1,11 +1,17 @@
 import { eq } from "drizzle-orm";
 import {
   generatedMarketDbAdapter,
-  generatedMarketGeoAdapter,
   generatedMarketPeopleAdapter,
   generatedMarketReviewsAdapter,
   generatedMarketWebAdapter,
 } from "../../adapters/generated";
+import {
+  generatedMarketGeoCatalogAdapter,
+  marketGeoCatalogAdapter,
+  marketPeopleCatalogAdapter,
+  marketReviewsCatalogAdapter,
+  marketWebCatalogAdapter,
+} from "../../adapters/catalog";
 import type { ToolCallWriter } from "../../capabilities";
 import { PlanDataSchema } from "../../contracts";
 import { db } from "../../db/client";
@@ -34,6 +40,7 @@ import {
   creatorSelector,
   drafter,
   evidenceExtractor,
+  locationFinder,
   runObjectiveCompiler,
 } from "../agents";
 import {
@@ -219,17 +226,22 @@ export function createDefaultWorkflowServices(
       const runtime = {
         store: repositoryStore,
         agents: {
+          locationFinder,
           extract: evidenceExtractor,
           assess: assessor,
           draft: drafter,
           selectCreators: creatorSelector,
         },
         adapters: {
-          geo: [geoSimAdapter, generatedMarketGeoAdapter],
+          geo: [marketGeoCatalogAdapter, generatedMarketGeoCatalogAdapter],
+          generatedGeo: generatedMarketGeoCatalogAdapter,
           db: [dbSimAdapter, generatedMarketDbAdapter],
-          web: [webSimAdapter, generatedMarketWebAdapter],
-          reviews: [reviewsSimAdapter, generatedMarketReviewsAdapter],
-          people: [peopleSimAdapter, generatedMarketPeopleAdapter],
+          web: [marketWebCatalogAdapter, generatedMarketWebAdapter],
+          reviews: [
+            marketReviewsCatalogAdapter,
+            generatedMarketReviewsAdapter,
+          ],
+          people: [marketPeopleCatalogAdapter, generatedMarketPeopleAdapter],
         },
         ledger: repositoryLedger,
         events: runtimeEvents,

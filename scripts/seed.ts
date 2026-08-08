@@ -6,10 +6,10 @@ import {
   NewWorkspaceSchema,
 } from "../src/contracts";
 import { closeDatabase, db } from "../src/db/client";
-import { targetRepo } from "../src/db/repositories";
+import { marketBusinessRepo, targetRepo } from "../src/db/repositories";
 import type { NewTarget } from "../src/db/repositories/types";
 import { campaign, objective, workspace } from "../src/db/schema";
-import type { Business, Creator } from "../src/sim/schema";
+import type { Creator } from "../src/sim/schema";
 import { simWorld } from "../src/sim/world";
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
@@ -103,29 +103,6 @@ async function main(): Promise<void> {
       },
     });
 
-  function businessTarget(business: Business, index: number): NewTarget {
-    const contact = business.contacts.find(() => true);
-    if (contact === undefined) {
-      throw new Error(`Seed business ${business.id} has no contact.`);
-    }
-    return {
-      id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-      campaignId,
-      kind: "organization",
-      relationship: "prospect",
-      status: "discovered",
-      externalRef: business.id,
-      name: business.name,
-      payload: {
-        address: business.address,
-        locality: business.locality,
-        categories: [business.category],
-        websiteUrl: business.website.url,
-        phone: contact.phone,
-      },
-    };
-  }
-
   function creatorTarget(creator: Creator, index: number): NewTarget {
     return {
       id: `40000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
@@ -152,10 +129,13 @@ async function main(): Promise<void> {
     };
   }
 
-  await targetRepo.bulkUpsert([
-    ...simWorld.businesses.map(businessTarget),
-    ...simWorld.creators.map(creatorTarget),
-  ]);
+  // Businesses live in the reusable catalog and become campaign targets only
+  // after the Location Finder selects them.
+  await targetRepo.bulkUpsert(simWorld.creators.map(creatorTarget));
+  await marketBusinessRepo.upsert(simWorld.businesses, {
+    geography: "Bengaluru",
+    provenance: "seeded",
+  });
 
   const counts = await db.execute(sql`
   select

@@ -252,16 +252,54 @@ export function createOrganizationWorkflow<const WorkflowId extends string>(
       ) {
         return [];
       }
-      const result = await discoverOrganization(
-        motionId,
-        inputData,
-        runtimeFor(
+      if (motionId === "business.local") {
+        await writer.write(
+          agentStatus(
+            inputData,
+            "location-finder",
+            "Location Finder",
+            "running",
+            "Selecting ten relevant businesses with reachable contact routes.",
+          ),
+        );
+      }
+      let result: Awaited<ReturnType<typeof discoverOrganization>>;
+      try {
+        result = await discoverOrganization(
+          motionId,
           inputData,
-          streamWorkflowEvents(inputData, (value) => writer.write(value)),
-        ),
-      );
+          runtimeFor(
+            inputData,
+            streamWorkflowEvents(inputData, (value) => writer.write(value)),
+          ),
+        );
+      } catch (error) {
+        if (motionId === "business.local") {
+          await writer.write(
+            agentStatus(
+              inputData,
+              "location-finder",
+              "Location Finder",
+              "failed",
+              reason(error),
+            ),
+          );
+        }
+        throw error;
+      }
       if (!result.ok) {
         return [];
+      }
+      if (motionId === "business.local") {
+        await writer.write(
+          agentStatus(
+            inputData,
+            "location-finder",
+            "Location Finder",
+            "completed",
+            `Selected ${result.targets.length} businesses for qualification and outreach.`,
+          ),
+        );
       }
       return result.targets.map((target) => ({
         ...inputData,

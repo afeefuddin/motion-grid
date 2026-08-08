@@ -46,9 +46,13 @@ function sourceRef(kind: string, externalRef: string): string {
   return `generated:${kind}:${externalRef}`;
 }
 
+export const generatedMarketStore = new GeneratedMarketStore({
+  generateWorld: generateWorldWithClaude,
+});
+
 /** Creates all generated-market capability adapters over one shared cache. */
 export function createGeneratedMarketAdapters(
-  store = new GeneratedMarketStore({ generateWorld: generateWorldWithClaude }),
+  store = generatedMarketStore,
 ) {
   const geo: Adapter<"geo.query"> = {
     id: "generated.market.geo",

@@ -7,6 +7,7 @@ export { contactRepo } from "./contact";
 export { edgeRepo } from "./edge";
 export { interactionRepo } from "./interaction";
 export { messageRepo } from "./message";
+export { marketBusinessRepo } from "./market-business";
 export { motionAllocationRepo } from "./motion-allocation";
 export { objectiveRepo } from "./objective";
 export { planRepo } from "./plan";
