@@ -3,6 +3,7 @@ import type {
   NewAllocationSchema,
   NewApprovalSchema,
   NewAssessmentSchema,
+  NewCampaignConversationMessageSchema,
   NewCampaignSchema,
   NewContactSchema,
   NewEdgeSchema,
@@ -22,6 +23,9 @@ import type {
 
 export type NewWorkspace = z.infer<typeof NewWorkspaceSchema>;
 export type NewCampaign = z.infer<typeof NewCampaignSchema>;
+export type NewCampaignConversationMessage = z.infer<
+  typeof NewCampaignConversationMessageSchema
+>;
 export type NewObjective = z.infer<typeof NewObjectiveSchema>;
 export type NewPlan = z.infer<typeof NewPlanSchema>;
 export type NewMotionAllocation = z.infer<typeof NewMotionAllocationSchema>;

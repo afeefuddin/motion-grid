@@ -11,6 +11,8 @@ import { PlanDataSchema } from "../../contracts";
 import { db } from "../../db/client";
 import {
   assessmentRepo,
+  campaignConversationMessageRepo,
+  campaignRepo,
   contactRepo,
   messageRepo,
   planRepo,
@@ -251,7 +253,23 @@ export function createDefaultWorkflowServices(
       if (!result.ok) {
         throw new Error(result.reason);
       }
+      await runRepo.complete(input.runId);
+      await campaignRepo.updateStatus(input.campaignId, "completed");
+      await campaignConversationMessageRepo.updateAssistantForRun(
+        input.runId,
+        "completed",
+        "The run is complete. The campaign artifact now includes the latest verified results.",
+      );
       return result.data;
+    },
+    async recordFailure(input) {
+      await runRepo.fail(input.runId, input.reason);
+      await campaignRepo.updateStatus(input.campaignId, "failed");
+      await campaignConversationMessageRepo.updateAssistantForRun(
+        input.runId,
+        "failed",
+        `I couldn’t finish this change: ${input.reason}`,
+      );
     },
   };
 }

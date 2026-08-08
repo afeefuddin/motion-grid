@@ -33,6 +33,36 @@ export const runRepo = {
     return parseOptionalRow(RunSchema, rows[0]);
   },
 
+  async complete(id: Run["id"]) {
+    const now = new Date();
+    const rows = await db
+      .update(run)
+      .set({
+        status: "completed",
+        completedAt: now,
+        failureReason: null,
+        updatedAt: now,
+      })
+      .where(eq(run.id, id))
+      .returning();
+    return parseOptionalRow(RunSchema, rows[0]);
+  },
+
+  async fail(id: Run["id"], failureReason: string) {
+    const now = new Date();
+    const rows = await db
+      .update(run)
+      .set({
+        status: "failed",
+        completedAt: now,
+        failureReason,
+        updatedAt: now,
+      })
+      .where(eq(run.id, id))
+      .returning();
+    return parseOptionalRow(RunSchema, rows[0]);
+  },
+
   async attachPlan(id: Run["id"], planId: NonNullable<Run["planId"]>) {
     const rows = await db
       .update(run)

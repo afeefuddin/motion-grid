@@ -35,6 +35,17 @@ Then apply the application schema with `pnpm db:push`.
 
 The web app runs on `http://localhost:3000`.
 
+## Runtime ownership
+
+Campaign runs execute in the Mastra service, not in the Next.js process. Next.js only
+dispatches start, resume, and cancel commands and proxies an observer stream to connected
+browsers. Closing a browser tab or restarting the web app does not cancel a run.
+
+Mastra persists workflow snapshots in PostgreSQL and owns approval suspension, background
+execution, recovery, and bounded concurrency. Campaign, run, conversation, evidence, and
+result state is also written to PostgreSQL from inside the workflow so correctness never
+depends on an SSE connection being alive.
+
 The root `src/contracts` package is the authoritative Zod contract surface, and
 `src/db/schema.ts` is the authoritative Drizzle schema. The web app and Mastra runtime consume
 those boundaries as later implementation waves are completed.

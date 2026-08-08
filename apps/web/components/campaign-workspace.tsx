@@ -1,14 +1,15 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight, CircleDollarSign, FileCheck2, Link2, MessageSquareText, Radio, RefreshCw, Route, ShieldCheck, SlidersHorizontal, Sparkles, X, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, ArrowUp, Check, CheckCircle2, ChevronRight, CircleDollarSign, FileCheck2, Link2, MessageSquareText, Radio, RefreshCw, Route, ShieldCheck, SlidersHorizontal, Sparkles, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import type { z } from "zod";
-import { CampaignDetailResponseSchema, SseEventSchema, type SseEvent } from "../../../src/contracts/api";
-import type { Approval, Edge, Signal, Target } from "../../../src/contracts/entities";
+import { CampaignDetailResponseSchema, ContinueCampaignResponseSchema, SseEventSchema, type SseEvent } from "../../../src/contracts/api";
+import type { Approval, CampaignConversationMessage, Edge, Signal, Target } from "../../../src/contracts/entities";
 import { PlanDataSchema } from "../../../src/contracts/steps";
 import { readContractJson } from "./http";
 import { replayCampaign, replayEvents, replayPlan } from "./replay-fixture";
+import { BrandMark } from "./brand-mark";
 
 type CampaignDetail = z.infer<typeof CampaignDetailResponseSchema>;
 type PlanData = z.infer<typeof PlanDataSchema>;
@@ -30,10 +31,11 @@ type Projection = {
 };
 
 function initialProjection(detail: CampaignDetail, plan: PlanData | null): Projection {
-  return { plan, targets: detail.targets, reasons: {}, signals: [], edges: [], approvals: [], operatingCents: detail.campaign.operatingSpentCents, commitCents: detail.campaign.commitSpentCents, warning: null, replan: null, activities: [] };
+  return { plan, targets: detail.targets, reasons: {}, signals: [], edges: [], approvals: detail.approvals, operatingCents: detail.campaign.operatingSpentCents, commitCents: detail.campaign.commitSpentCents, warning: null, replan: null, activities: [] };
 }
 
 function activityText(event: SseEvent) {
+  if (event.type === "agent.status") return `${event.data.label} ${event.data.status} — ${event.data.detail}`;
   if (event.type === "motion_selected") return `Selected ${event.data.motionId} — ${event.data.rationale}`;
   if (event.type === "motion_declined") return `Declined ${event.data.motionId} — ${event.data.reason}`;
   if (event.type === "target.state") return `${event.data.to.replace("_", " ")} target ${event.data.targetId.slice(0, 8)}`;
@@ -53,7 +55,7 @@ function activityText(event: SseEvent) {
 
 function projectRun(previous: Projection, event: SseEvent): Projection {
   const activity = { id: event.id, text: activityText(event), at: new Date(event.occurredAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) };
-  const next = { ...previous, activities: [activity, ...previous.activities].slice(0, 12) };
+  const next = { ...previous, activities: [activity, ...previous.activities.filter((item) => item.id !== event.id)].slice(0, 12) };
   if (event.type === "plan.delta" && event.data.snapshot !== null) return { ...next, plan: event.data.snapshot };
   if (event.type === "target.state") return { ...next, targets: previous.targets.map((target) => target.id === event.data.targetId ? { ...target, status: event.data.to } : target), reasons: event.data.reason === null ? previous.reasons : { ...previous.reasons, [event.data.targetId]: event.data.reason } };
   if (event.type === "signal.added") return { ...next, signals: [...previous.signals.filter((signal) => signal.id !== event.data.signal.id), event.data.signal] };
@@ -76,6 +78,12 @@ export function CampaignWorkspace({ campaignId, replay }: Readonly<{ campaignId:
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [replayIndex, setReplayIndex] = useState(0);
+  const [conversation, setConversation] = useState<CampaignConversationMessage[]>(replay ? replayCampaign.conversation : []);
+  const [activeRunId, setActiveRunId] = useState(campaignId);
+  const [activeAgent, setActiveAgent] = useState<{ label: string; detail: string } | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [chatError, setChatError] = useState("");
 
   useEffect(() => {
     if (replay) return;
@@ -90,6 +98,9 @@ export function CampaignWorkspace({ campaignId, replay }: Readonly<{ campaignId:
         }
         setDetail(parsed);
         setProjection(initialProjection(parsed, planData));
+        setConversation(parsed.conversation);
+        const latestRun = [...parsed.conversation].reverse().find((message) => message.runId !== null)?.runId;
+        setActiveRunId(latestRun ?? campaignId);
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : "Campaign could not be loaded.");
         setConnection("offline");
@@ -100,7 +111,7 @@ export function CampaignWorkspace({ campaignId, replay }: Readonly<{ campaignId:
 
   useEffect(() => {
     if (replay) return;
-    const source = new EventSource(`/api/stream/${campaignId}`);
+    const source = new EventSource(`/api/stream/${activeRunId}`);
     const receive = (message: MessageEvent<string>) => {
       const value: unknown = JSON.parse(message.data, (_key, item: unknown) => {
         if (typeof item === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(item)) return new Date(item);
@@ -108,13 +119,32 @@ export function CampaignWorkspace({ campaignId, replay }: Readonly<{ campaignId:
       });
       const event = SseEventSchema.parse(value);
       setProjection((current) => current === null ? current : projectRun(current, event));
+      if (event.type === "agent.status") {
+        if (event.data.status === "running") {
+          setActiveAgent({ label: event.data.label, detail: event.data.detail });
+        } else {
+          setActiveAgent((current) => current?.label === event.data.label ? null : current);
+        }
+        if (event.data.status === "failed") {
+          setConversation((current) => current.map((message) => message.runId === event.runId && message.role === "motiongrid" ? { ...message, status: "failed", content: `I couldn’t finish this change: ${event.data.detail}` } : message));
+        }
+      }
+      if (event.type === "approval.required") {
+        setActiveAgent(null);
+        setConversation((current) => current.map((message) => message.runId === event.runId && message.role === "motiongrid" ? { ...message, status: "completed", content: "I updated the campaign route from your brief. Review the changed plan and approval checkpoint beside this conversation." } : message));
+        setDetail((current) => current === null ? current : { ...current, campaign: { ...current.campaign, status: "pending_approval" } });
+      }
+      if (event.type === "run.done") {
+        setActiveAgent(null);
+        setConversation((current) => current.map((message) => message.runId === event.runId && message.role === "motiongrid" ? { ...message, status: "completed", content: "The run is complete. The campaign artifact now includes the latest verified results." } : message));
+      }
     };
-    const eventTypes = ["plan.delta", "motion_selected", "motion_declined", "capability_ranked", "binding_chosen", "policy_warning", "replan_started", "target.state", "cost.tick", "signal.added", "edge.discovered", "approval.required", "message.sent", "interaction.received", "run.done"];
+    const eventTypes = ["agent.status", "plan.delta", "motion_selected", "motion_declined", "capability_ranked", "binding_chosen", "policy_warning", "replan_started", "target.state", "cost.tick", "signal.added", "edge.discovered", "approval.required", "message.sent", "interaction.received", "run.done"];
     source.onopen = () => setConnection("connected");
     source.onerror = () => setConnection(source.readyState === EventSource.CONNECTING ? "reconnecting" : "offline");
     for (const eventType of eventTypes) source.addEventListener(eventType, receive);
     return () => source.close();
-  }, [campaignId, replay]);
+  }, [activeRunId, replay]);
 
   useEffect(() => {
     if (!replay || replayIndex >= replayEvents.length) return;
@@ -133,19 +163,55 @@ export function CampaignWorkspace({ campaignId, replay }: Readonly<{ campaignId:
   const fitCount = projection.targets.filter((target) => ["fit", "contact_found", "draft_ready", "pending_approval", "sent", "delivered", "engaged"].includes(target.status)).length;
   const rejectedCount = projection.targets.filter((target) => target.status === "not_fit").length;
   const pending = projection.approvals.filter((approval) => approval.status === "pending");
+  const agentIsRunning = conversation.some((message) => message.role === "motiongrid" && message.status === "running");
+  const originalObjective = detail.objective.prompt.split("\n\nOperator amendment:")[0] ?? detail.objective.prompt;
+
+  async function sendMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = draft.trim();
+    if (message.length === 0 || sending || agentIsRunning || replay) return;
+    setSending(true);
+    setChatError("");
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const result = ContinueCampaignResponseSchema.parse(await readContractJson(response));
+      setConversation((current) => [...current, result.operatorMessage, result.assistantMessage]);
+      setActiveRunId(result.run.id);
+      setActiveAgent({ label: "Agent dispatch", detail: "Starting the objective compiler with your latest amendment." });
+      setDetail((current) => current === null ? current : { ...current, campaign: { ...current.campaign, status: "planning" } });
+      setDraft("");
+    } catch (reason) {
+      setChatError(reason instanceof Error ? reason.message : "The campaign change could not be started.");
+    }
+    setSending(false);
+  }
 
   return (
     <section className="workspace-page">
-      <header className="workspace-title"><div><Link className="back-link" href="/campaigns"><ArrowLeft size={14} /> Campaigns</Link><h1>{detail.campaign.name}</h1><p>{detail.objective.prompt}</p></div><span className={`connection-pill connection-pill--${connection}`}><Radio size={13} /> {connection}</span></header>
+      <header className="workspace-title"><div><Link className="back-link" href="/campaigns"><ArrowLeft size={14} /> Campaigns</Link><h1>{detail.campaign.name}</h1><p>{originalObjective}</p></div><span className={`connection-pill connection-pill--${connection}`}><Radio size={13} /> {connection}</span></header>
       <div className="command-strip" aria-live="polite"><div><span>Phase</span><strong>{detail.campaign.status.replace("_", " ")}</strong></div><div><span>Examined</span><strong>{projection.targets.length}</strong></div><div><span>Qualified / rejected</span><strong>{fitCount} / {rejectedCount}</strong></div><div><span>Operating</span><strong>{formatUsd(projection.operatingCents)}</strong></div><div><span>Committed</span><strong>{formatInr(projection.commitCents)}</strong></div><button className={pending.length > 0 ? "needs-attention" : ""} type="button" onClick={() => setView("approvals")}><ShieldCheck size={15} /> {pending.length} approvals</button></div>
-      {projection.warning && <div className="budget-warning"><AlertTriangle size={18} /><div><strong>Budget checkpoint</strong><span>{projection.warning}</span></div></div>}
-      <nav className="workspace-tabs" aria-label="Campaign views"><button className={view === "plan" ? "is-active" : ""} onClick={() => setView("plan")} type="button"><Route size={16} /> Plan</button><button className={view === "grid" ? "is-active" : ""} onClick={() => setView("grid")} type="button"><SlidersHorizontal size={16} /> The Grid</button><button className={view === "approvals" ? "is-active" : ""} onClick={() => setView("approvals")} type="button"><FileCheck2 size={16} /> Approvals {pending.length > 0 && <b>{pending.length}</b>}</button></nav>
-      {view === "plan" && <PlanView plan={projection.plan} replan={projection.replan} approvals={pending} replay={replay} campaignId={campaignId} onApproved={(approvalId) => setProjection((current) => current === null ? current : { ...current, approvals: current.approvals.map((approval) => approval.id === approvalId ? { ...approval, status: "approved" } : approval) })} />}
-      {view === "grid" && <GridView projection={projection} selectedTargetId={selectedTargetId} onSelect={setSelectedTargetId} />}
-      {view === "approvals" && <ApprovalView approvals={pending} campaignId={campaignId} replay={replay} onDecided={(approvalId) => setProjection((current) => current === null ? current : { ...current, approvals: current.approvals.map((approval) => approval.id === approvalId ? { ...approval, status: "approved" } : approval) })} />}
+      <div className="campaign-control-room">
+        <ConversationPanel activeAgent={activeAgent} conversation={conversation} draft={draft} error={chatError} initialObjective={originalObjective} isRunning={agentIsRunning} onDraftChange={setDraft} onSubmit={sendMessage} replay={replay} sending={sending} />
+        <section className="campaign-artifact" aria-label="Live campaign artifact">
+          <header className="artifact-heading"><div><span className="product-kicker">Live artifact</span><strong>Campaign route and evidence</strong></div><small>Updated by the conversation</small></header>
+          {projection.warning && <div className="budget-warning"><AlertTriangle size={18} /><div><strong>Budget checkpoint</strong><span>{projection.warning}</span></div></div>}
+          <nav className="workspace-tabs" aria-label="Campaign views"><button className={view === "plan" ? "is-active" : ""} onClick={() => setView("plan")} type="button"><Route size={16} /> Plan</button><button className={view === "grid" ? "is-active" : ""} onClick={() => setView("grid")} type="button"><SlidersHorizontal size={16} /> The Grid</button><button className={view === "approvals" ? "is-active" : ""} onClick={() => setView("approvals")} type="button"><FileCheck2 size={16} /> Approvals {pending.length > 0 && <b>{pending.length}</b>}</button></nav>
+          {view === "plan" && <PlanView plan={projection.plan} replan={projection.replan} approvals={pending} replay={replay} campaignId={campaignId} onApproved={(approvalId) => setProjection((current) => current === null ? current : { ...current, approvals: current.approvals.map((approval) => approval.id === approvalId ? { ...approval, status: "approved" } : approval) })} />}
+          {view === "grid" && <GridView projection={projection} selectedTargetId={selectedTargetId} onSelect={setSelectedTargetId} />}
+          {view === "approvals" && <ApprovalView approvals={pending} campaignId={campaignId} replay={replay} onDecided={(approvalId) => setProjection((current) => current === null ? current : { ...current, approvals: current.approvals.map((approval) => approval.id === approvalId ? { ...approval, status: "approved" } : approval) })} />}
+        </section>
+      </div>
       {selectedTarget && <EvidenceDrawer target={selectedTarget} signals={projection.signals.filter((signal) => signal.targetId === selectedTarget.id)} edge={projection.edges.find((edge) => edge.toTargetId === selectedTarget.id) ?? null} reason={projection.reasons[selectedTarget.id]} onClose={() => setSelectedTargetId(null)} />}
     </section>
   );
+}
+
+function ConversationPanel({ activeAgent, conversation, draft, error, initialObjective, isRunning, onDraftChange, onSubmit, replay, sending }: Readonly<{ activeAgent: { label: string; detail: string } | null; conversation: CampaignConversationMessage[]; draft: string; error: string; initialObjective: string; isRunning: boolean; onDraftChange: (value: string) => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; replay: boolean; sending: boolean }>) {
+  return <aside className="campaign-conversation" aria-label="Campaign conversation"><header><div><span className="product-kicker">Campaign brief</span><h2>Steer the agents</h2></div><span className={isRunning ? "conversation-state is-running" : "conversation-state"}>{isRunning ? "Agents working" : "Ready"}</span></header><div className="campaign-conversation-thread" aria-live="polite">{conversation.length === 0 && <><div className="conversation-operator"><p>{initialObjective}</p></div><div className="conversation-assistant"><span className="assistant-mark"><BrandMark /></span><div><strong>MotionGrid</strong><p>The first route is here. Ask me to change the audience, motion mix, budget, evidence bar, or outreach constraints.</p></div></div></>}{conversation.map((message) => message.role === "operator" ? <div className="conversation-operator" key={message.id}><p>{message.content}</p><time>{message.createdAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</time></div> : <div className={`conversation-assistant conversation-assistant--${message.status}`} key={message.id}><span className="assistant-mark"><BrandMark /></span><div><div className="conversation-author"><strong>MotionGrid</strong><span>{message.status === "running" ? "working" : message.status}</span></div><p>{message.content}</p>{message.status === "running" && <span className="thinking-dots"><i /><i /><i /></span>}</div></div>)}{activeAgent && <div className="agent-work-receipt"><span className="live-pulse" /><div><strong>{activeAgent.label}</strong><p>{activeAgent.detail}</p></div></div>}</div><form className="campaign-conversation-composer" onSubmit={onSubmit}><textarea aria-label="Change this campaign" disabled={isRunning || sending || replay} onChange={(event) => onDraftChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={isRunning ? "Wait for the current change to finish…" : "Ask the agents to change this campaign…"} rows={3} value={draft} /><div><span>{isRunning ? "The artifact updates as agents finish" : "Enter to send · Shift + Enter for a new line"}</span><button aria-label="Send campaign change" disabled={draft.trim().length === 0 || isRunning || sending || replay} type="submit"><ArrowUp size={16} /></button></div>{error && <p className="chat-error" role="alert">{error}</p>}</form></aside>;
 }
 
 function PlanView({ plan, replan, approvals, replay, campaignId, onApproved }: Readonly<{ plan: PlanData | null; replan: Projection["replan"]; approvals: Approval[]; replay: boolean; campaignId: string; onApproved: (approvalId: string) => void }>) {

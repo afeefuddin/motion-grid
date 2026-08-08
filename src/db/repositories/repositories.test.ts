@@ -194,6 +194,28 @@ test("all entities round-trip through their contract repositories", async (conte
       const updatedRun = await runRepo.updateStatus(runId, "running");
       assert.ok(updatedRun);
       assert.equal(updatedRun.status, "running");
+
+      const completedRun = await runRepo.complete(runId);
+      assert.ok(completedRun);
+      assert.equal(completedRun.status, "completed");
+      assert.ok(completedRun.completedAt);
+      assert.equal(completedRun.failureReason, null);
+
+      const failedRunId = randomUUID();
+      await runRepo.create({
+        id: failedRunId,
+        campaignId,
+        planId,
+        kind: "replan",
+      });
+      const failedRun = await runRepo.fail(
+        failedRunId,
+        "The objective compiler failed.",
+      );
+      assert.ok(failedRun);
+      assert.equal(failedRun.status, "failed");
+      assert.ok(failedRun.completedAt);
+      assert.equal(failedRun.failureReason, "The objective compiler failed.");
     },
   );
 

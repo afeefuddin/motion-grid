@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ApprovalSchema,
+  CampaignConversationMessageSchema,
   CampaignSchema,
   EdgeSchema,
   IdSchema,
@@ -74,6 +75,24 @@ export const CampaignDetailResponseSchema = z.object({
   objective: ObjectiveSchema,
   plan: PlanSchema.nullable(),
   targets: z.array(TargetSchema),
+  approvals: z.array(ApprovalSchema),
+  conversation: z.array(CampaignConversationMessageSchema),
+});
+
+export const DeleteCampaignRequestSchema = z.object({ campaignId: IdSchema });
+export const DeleteCampaignResponseSchema = z.object({
+  campaignId: IdSchema,
+  cancelledRunCount: z.int().nonnegative(),
+});
+
+export const ContinueCampaignRequestSchema = z.object({
+  campaignId: IdSchema,
+  message: z.string().trim().min(1).max(4_000),
+});
+export const ContinueCampaignResponseSchema = z.object({
+  operatorMessage: CampaignConversationMessageSchema,
+  assistantMessage: CampaignConversationMessageSchema,
+  run: RunSchema,
 });
 
 export const ApproveCampaignRequestSchema = z.object({
@@ -253,7 +272,18 @@ export const RunDoneEventSchema = EventEnvelopeSchema.extend({
   }),
 });
 
+export const AgentStatusEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal("agent.status"),
+  data: z.object({
+    agentId: z.string().min(1),
+    label: z.string().min(1),
+    status: z.enum(["running", "completed", "failed"]),
+    detail: z.string().min(1),
+  }),
+});
+
 export const SseEventSchema = z.discriminatedUnion("type", [
+  AgentStatusEventSchema,
   PlanDeltaEventSchema,
   MotionSelectedEventSchema,
   MotionDeclinedEventSchema,

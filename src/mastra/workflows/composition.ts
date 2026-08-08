@@ -86,10 +86,32 @@ export interface CampaignWorkflowServices {
     readonly runId: string;
     readonly targetIds: readonly string[];
   }): Promise<z.output<typeof SynthesizeDataSchema>>;
+  recordFailure?(input: {
+    readonly campaignId: string;
+    readonly runId: string;
+    readonly reason: string;
+  }): Promise<void>;
 }
 
 function reason(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown motion failure.";
+}
+
+function agentStatus(
+  input: { campaignId: string; runId: string },
+  agentId: string,
+  label: string,
+  status: "running" | "completed" | "failed",
+  detail: string,
+) {
+  return {
+    id: randomUUID(),
+    runId: input.runId,
+    campaignId: input.campaignId,
+    occurredAt: new Date().toISOString(),
+    type: "agent.status",
+    data: { agentId, label, status, detail },
+  };
 }
 
 function streamWorkflowEvents(
@@ -146,16 +168,48 @@ export function createTargetWorkflow(
     id: "target-pipeline",
     inputSchema: TargetJobSchema,
     outputSchema: TargetResultSchema,
-    execute: ({ inputData, writer }) => {
+    execute: async ({ inputData, writer }) => {
       const planned = PlannedCampaignSchema.parse(inputData);
-      return processOrganizationTarget(
-        motionId,
-        inputData,
-        runtimeFor(
+      await writer.write(
+        agentStatus(
           planned,
-          streamWorkflowEvents(planned, (value) => writer.write(value)),
+          "target-pipeline",
+          "Evidence team",
+          "running",
+          `Checking evidence and fit for ${inputData.target.name}.`,
         ),
       );
+      try {
+        const result = await processOrganizationTarget(
+          motionId,
+          inputData,
+          runtimeFor(
+            planned,
+            streamWorkflowEvents(planned, (value) => writer.write(value)),
+          ),
+        );
+        await writer.write(
+          agentStatus(
+            planned,
+            "target-pipeline",
+            "Evidence team",
+            "completed",
+            `Finished the evidence pass for ${inputData.target.name}.`,
+          ),
+        );
+        return result;
+      } catch (error) {
+        await writer.write(
+          agentStatus(
+            planned,
+            "target-pipeline",
+            "Evidence team",
+            "failed",
+            `Could not finish ${inputData.target.name}: ${reason(error)}`,
+          ),
+        );
+        throw error;
+      }
     },
   });
 
@@ -224,15 +278,51 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
     id: "compile-objective-step",
     inputSchema: CampaignWorkflowInputSchema,
     outputSchema: CampaignContextSchema,
-    execute: async ({ inputData }) => {
-      const spec = await services.compileObjective(inputData);
-      await services.recordCompiledSpec({
-        campaignId: inputData.campaignId,
-        name: spec.name,
-        budget: spec.budget,
-        spec,
-      });
-      return { ...inputData, spec };
+    execute: async ({ inputData, writer }) => {
+      await writer.write(
+        agentStatus(
+          inputData,
+          "objective-compiler",
+          "Objective compiler",
+          "running",
+          "Translating the latest brief into campaign constraints.",
+        ),
+      );
+      try {
+        const spec = await services.compileObjective(inputData);
+        await services.recordCompiledSpec({
+          campaignId: inputData.campaignId,
+          name: spec.name,
+          budget: spec.budget,
+          spec,
+        });
+        await writer.write(
+          agentStatus(
+            inputData,
+            "objective-compiler",
+            "Objective compiler",
+            "completed",
+            "The revised objective and constraints are ready.",
+          ),
+        );
+        return { ...inputData, spec };
+      } catch (error) {
+        await services.recordFailure?.({
+          campaignId: inputData.campaignId,
+          runId: inputData.runId,
+          reason: reason(error),
+        });
+        await writer.write(
+          agentStatus(
+            inputData,
+            "objective-compiler",
+            "Objective compiler",
+            "failed",
+            reason(error),
+          ),
+        );
+        throw error;
+      }
     },
   });
   const planStep = createStep({
@@ -240,18 +330,64 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
     inputSchema: CampaignContextSchema,
     outputSchema: PlannedCampaignSchema,
     execute: async ({ inputData, writer }) => {
-      const plan = await services.planCampaign({
-        campaignId: inputData.campaignId,
-        runId: inputData.runId,
-        planId: inputData.planId,
-        spec: inputData.spec,
-        connectedSources: inputData.connectedSources,
-      });
+      await writer.write(
+        agentStatus(
+          inputData,
+          "planner",
+          "Campaign planner",
+          "running",
+          "Re-ranking motions, providers, policy gates, and budget allocation.",
+        ),
+      );
+      let plan: z.output<typeof PlanDataSchema>;
+      try {
+        plan = await services.planCampaign({
+          campaignId: inputData.campaignId,
+          runId: inputData.runId,
+          planId: inputData.planId,
+          spec: inputData.spec,
+          connectedSources: inputData.connectedSources,
+        });
+        await writer.write(
+          agentStatus(
+            inputData,
+            "planner",
+            "Campaign planner",
+            "completed",
+            "A revised route is ready for review.",
+          ),
+        );
+      } catch (error) {
+        await services.recordFailure?.({
+          campaignId: inputData.campaignId,
+          runId: inputData.runId,
+          reason: reason(error),
+        });
+        await writer.write(
+          agentStatus(
+            inputData,
+            "planner",
+            "Campaign planner",
+            "failed",
+            reason(error),
+          ),
+        );
+        throw error;
+      }
       const envelope = () => ({
         id: randomUUID(),
         runId: inputData.runId,
         campaignId: inputData.campaignId,
         occurredAt: new Date().toISOString(),
+      });
+      await writer.write({
+        ...envelope(),
+        type: "plan.delta",
+        data: {
+          sequence: 1,
+          delta: "Published the revised campaign route.",
+          snapshot: plan,
+        },
       });
       for (const declined of plan.declinedMotions) {
         await writer.write({
@@ -294,20 +430,47 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
     id: "creator-workflow",
     inputSchema: PlannedCampaignSchema,
     outputSchema: MotionResultSchema,
-    execute: async ({ inputData }) => {
+    execute: async ({ inputData, writer }) => {
       if (
         !inputData.plan.motions.some((motion) => motion.motionId === "creator")
       ) {
         return { ok: true, targetIds: [], failures: [] };
       }
+      await writer.write(
+        agentStatus(
+          inputData,
+          "creator-motion",
+          "Creator motion",
+          "running",
+          "Evaluating creator-assisted paths for the selected route.",
+        ),
+      );
       try {
         const result = await services.runCreator(inputData);
+        await writer.write(
+          agentStatus(
+            inputData,
+            "creator-motion",
+            "Creator motion",
+            "completed",
+            "Creator candidates and relationship paths are updated.",
+          ),
+        );
         return {
           ok: result.ok,
           targetIds: [...result.targetIds],
           failures: [...result.failures],
         };
       } catch (error) {
+        await writer.write(
+          agentStatus(
+            inputData,
+            "creator-motion",
+            "Creator motion",
+            "failed",
+            reason(error),
+          ),
+        );
         return { ok: false, targetIds: [], failures: [reason(error)] };
       }
     },
@@ -330,23 +493,61 @@ export function createCampaignWorkflow(services: CampaignWorkflowServices) {
       "creator-workflow": MotionResultSchema,
     }),
     outputSchema: SynthesizeDataSchema,
-    execute: async ({ inputData, getInitData }) => {
+    execute: async ({ inputData, getInitData, writer }) => {
       const initial = CampaignWorkflowInputSchema.parse(getInitData());
+      await writer.write(
+        agentStatus(
+          initial,
+          "synthesizer",
+          "Campaign synthesizer",
+          "running",
+          "Combining target, evidence, cost, and relationship results.",
+        ),
+      );
       const localIds = inputData["business-local-workflow"].flatMap((target) =>
         target.ok ? [target.targetId] : [],
       );
       const onlineIds = inputData["business-online-workflow"].flatMap(
         (target) => (target.ok ? [target.targetId] : []),
       );
-      return services.synthesize({
-        campaignId: initial.campaignId,
-        runId: initial.runId,
-        targetIds: [
-          ...localIds,
-          ...onlineIds,
-          ...inputData["creator-workflow"].targetIds,
-        ],
-      });
+      let result: z.output<typeof SynthesizeDataSchema>;
+      try {
+        result = await services.synthesize({
+          campaignId: initial.campaignId,
+          runId: initial.runId,
+          targetIds: [
+            ...localIds,
+            ...onlineIds,
+            ...inputData["creator-workflow"].targetIds,
+          ],
+        });
+      } catch (error) {
+        await services.recordFailure?.({
+          campaignId: initial.campaignId,
+          runId: initial.runId,
+          reason: reason(error),
+        });
+        await writer.write(
+          agentStatus(
+            initial,
+            "synthesizer",
+            "Campaign synthesizer",
+            "failed",
+            reason(error),
+          ),
+        );
+        throw error;
+      }
+      await writer.write(
+        agentStatus(
+          initial,
+          "synthesizer",
+          "Campaign synthesizer",
+          "completed",
+          "The campaign artifact now reflects the completed run.",
+        ),
+      );
+      return result;
     },
   });
 

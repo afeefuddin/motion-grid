@@ -15,6 +15,13 @@
       "when": 1786181662913,
       "tag": "0001_organic_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786182615262,
+      "tag": "0002_glossy_jubilee",
+      "breakpoints": true
     }
   ]
 }

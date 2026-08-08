@@ -120,6 +120,31 @@ export const objective = pgTable("objective", {
   ...timestamps,
 });
 
+export const campaignConversationMessage = pgTable(
+  "campaign_conversation_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaign.id, { onDelete: "cascade" }),
+    runId: uuid("run_id"),
+    role: text("role").notNull(),
+    status: text("status").notNull(),
+    content: text("content").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    check(
+      "campaign_conversation_message_role_valid",
+      sql`${table.role} in ('operator', 'motiongrid')`,
+    ),
+    check(
+      "campaign_conversation_message_status_valid",
+      sql`${table.status} in ('sent', 'running', 'completed', 'failed')`,
+    ),
+  ],
+);
+
 export const plan = pgTable(
   "plan",
   {

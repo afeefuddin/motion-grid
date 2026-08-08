@@ -49,9 +49,15 @@ export const replayCampaign = CampaignDetailResponseSchema.parse({
     { id: targetThree, campaignId, kind: "organization", relationship: "prospect", status: "pending_approval", externalRef: "tvacha-clinic", name: "Tvacha Skin Clinic", payload: { address: "CMH Road, Indiranagar", locality: "Indiranagar", categories: ["Skin clinic"], websiteUrl: "https://example.com/tvacha", phone: "+919900000003" }, createdAt: now, updatedAt: now },
     { id: targetCreator, campaignId, kind: "person", relationship: "prospect_partner", status: "fit", externalRef: "creator-03", name: "Maya Rao", payload: { platform: "Instagram", handle: "@mayamakes", followerCount: 48200, rateCardCommitCents: 15000000 }, createdAt: now, updatedAt: now },
   ],
+  conversation: [
+    { id: "70000000-0000-4000-8000-000000000001", campaignId, runId, role: "operator", status: "sent", content: "Find Bengaluru salons without reliable online booking, qualify them, and create a creator-assisted demo pipeline.", createdAt: now, updatedAt: now },
+    { id: "70000000-0000-4000-8000-000000000002", campaignId, runId, role: "motiongrid", status: "completed", content: "I built the first campaign route. You can ask me to change the audience, motion mix, budget, evidence bar, or outreach constraints.", createdAt: now, updatedAt: now },
+  ],
+  approvals: [{ id: approvalId, campaignId, runId, messageId: null, decision: "require_approval", status: "pending", reason: "Approve the selected motions, provider bindings, and ₹2,50,000 commitment ceiling.", requestedAt: now, decidedAt: null, decidedBy: null, createdAt: now, updatedAt: now }],
 });
 
 export const replayEvents = [
+  SseEventSchema.parse({ id: "evt-0", runId, campaignId, occurredAt: "2026-08-08T10:00:00.500Z", type: "agent.status", data: { agentId: "planner", label: "Campaign planner", status: "running", detail: "Ranking motions, providers, policy gates, and budget allocation." } }),
   SseEventSchema.parse({ id: "evt-1", runId, campaignId, occurredAt: "2026-08-08T10:00:01.000Z", type: "plan.delta", data: { sequence: 1, delta: "Plan assembled", snapshot: replayPlan } }),
   SseEventSchema.parse({ id: "evt-2", runId, campaignId, occurredAt: "2026-08-08T10:00:02.000Z", type: "motion_selected", data: { motionId: "business.local", rationale: "Booking friction is locally observable." } }),
   SseEventSchema.parse({ id: "evt-3", runId, campaignId, occurredAt: "2026-08-08T10:00:03.000Z", type: "motion_declined", data: { motionId: "consumer.ads", reason: "No consented audience or conversion history." } }),

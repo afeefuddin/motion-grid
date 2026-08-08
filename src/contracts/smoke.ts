@@ -65,6 +65,14 @@ const objective = {
   prompt: "Find local wellness businesses",
   compiledSpec: { goal: "book meetings" },
 };
+const conversationMessage = {
+  ...base,
+  campaignId: id,
+  runId: id,
+  role: "operator",
+  status: "sent",
+  content: "Add a creator-assisted route.",
+};
 const plan = {
   ...base,
   campaignId: id,
@@ -337,6 +345,13 @@ addMany([contracts.EvidencePayloadSchema], documentaryPayload);
 addMany([contracts.WorkspaceSchema, contracts.NewWorkspaceSchema], workspace);
 addMany([contracts.CampaignSchema, contracts.NewCampaignSchema], campaign);
 addMany([contracts.ObjectiveSchema, contracts.NewObjectiveSchema], objective);
+addMany(
+  [
+    contracts.CampaignConversationMessageSchema,
+    contracts.NewCampaignConversationMessageSchema,
+  ],
+  conversationMessage,
+);
 addMany([contracts.PlanSchema, contracts.NewPlanSchema], plan);
 addMany(
   [contracts.MotionAllocationSchema, contracts.NewMotionAllocationSchema],
@@ -754,6 +769,28 @@ add(contracts.CampaignDetailResponseSchema, {
   objective,
   plan,
   targets: [target],
+  approvals: [approval],
+  conversation: [conversationMessage],
+});
+add(contracts.ContinueCampaignRequestSchema, {
+  campaignId: id,
+  message: "Add a creator-assisted route.",
+});
+add(contracts.ContinueCampaignResponseSchema, {
+  operatorMessage: conversationMessage,
+  assistantMessage: {
+    ...conversationMessage,
+    id: id2,
+    role: "motiongrid",
+    status: "running",
+    content: "I’m revising the route.",
+  },
+  run,
+});
+add(contracts.DeleteCampaignRequestSchema, { campaignId: id });
+add(contracts.DeleteCampaignResponseSchema, {
+  campaignId: id,
+  cancelledRunCount: 1,
 });
 add(contracts.ApproveCampaignRequestSchema, {
   campaignId: id,
@@ -897,6 +934,17 @@ const runDone = {
     },
   },
 };
+const agentStatus = {
+  ...eventBase,
+  type: "agent.status",
+  data: {
+    agentId: "planner",
+    label: "Campaign planner",
+    status: "running",
+    detail: "Ranking the revised campaign route.",
+  },
+};
+add(contracts.AgentStatusEventSchema, agentStatus);
 add(contracts.PlanDeltaEventSchema, planDelta);
 add(contracts.MotionSelectedEventSchema, motionSelected);
 add(contracts.MotionDeclinedEventSchema, motionDeclined);

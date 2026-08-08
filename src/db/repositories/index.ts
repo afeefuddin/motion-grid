@@ -2,6 +2,7 @@ export { allocationRepo } from "./allocation";
 export { approvalRepo } from "./approval";
 export { assessmentRepo } from "./assessment";
 export { campaignRepo } from "./campaign";
+export { campaignConversationMessageRepo } from "./campaign-conversation-message";
 export { contactRepo } from "./contact";
 export { edgeRepo } from "./edge";
 export { interactionRepo } from "./interaction";
@@ -20,6 +21,7 @@ export type {
   NewApproval,
   NewAssessment,
   NewCampaign,
+  NewCampaignConversationMessage,
   NewContact,
   NewEdge,
   NewInteraction,

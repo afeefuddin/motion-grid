@@ -164,6 +164,18 @@ Evidence and approval drawers share the main application's rounded, warm-white s
 - Keep approve, edit, reject, and pause available without hunting.
 - Preserve keyboard focus and restore it when the drawer closes.
 
+### Campaign conversation and artifact
+
+The campaign conversation is a steering surface beside the durable campaign artifact, not a replacement for it.
+
+- Keep the conversation and the current plan, Grid, or approval state visible together on wide screens.
+- Treat each operator message as a change brief tied to one persisted run.
+- Show the specific agent or operational stage currently working, then replace running state with a clear completion, approval, or failure receipt.
+- Let streamed changes update the fixed artifact in place so the operator can see what the conversation changed.
+- Disable overlapping amendments while a change is running; preserve the typed instruction and explain what remains safe when a run fails.
+- On narrow screens, stack the bounded conversation above the artifact rather than reducing the artifact to a transcript.
+- Do not use agent avatars or conversational theater. The MotionGrid mark denotes product authorship; operational labels communicate who owns the current work.
+
 ### Empty, loading, and error states
 
 - Empty states may use simple hand-drawn GTM motifs, but must include a concrete next action.
@@ -213,7 +225,7 @@ Design mobile intentionally rather than collapsing desktop at the final breakpoi
 - Dark sci-fi command centers as the default product shell.
 - Generic dashboard card grids.
 - Fake charts, fake customer data, or unexplained scores.
-- Chat transcripts as the primary orchestration interface.
+- Chat transcripts that replace the durable campaign artifact.
 - Agent avatars and anthropomorphic bot teams.
 - Glassmorphism on every surface.
 - Excessive badges, floating shadows, and rounded rectangles.

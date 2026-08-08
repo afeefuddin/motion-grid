@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   ApprovalSchema,
   CampaignSchema,
+  CampaignConversationMessageSchema,
   ObjectiveSchema,
   PlanSchema,
   RunSchema,
@@ -11,6 +12,7 @@ import {
 import type { z } from "zod";
 import type {
   ApproveCampaignRequestSchema,
+  ContinueCampaignRequestSchema,
   CreateCampaignRequestSchema,
   StartRunRequestSchema,
 } from "../../../src/contracts/api";
@@ -18,6 +20,7 @@ import { PlanDataSchema } from "../../../src/contracts/steps";
 import {
   approval,
   campaign,
+  campaignConversationMessage,
   interaction,
   objective,
   plan,
@@ -25,7 +28,10 @@ import {
   target,
   workspace,
 } from "../../../src/db/schema";
-import { startCampaignWorkflow } from "./workflows";
+import {
+  cancelCampaignWorkflow,
+  startCampaignWorkflow,
+} from "./workflows";
 
 const provisionalBudget = {
   operating: { currency: "USD" as const, amountMinor: 100 },
@@ -100,6 +106,22 @@ export async function createCampaign(
       status: "running",
       startedAt: new Date(),
     });
+    await transaction.insert(campaignConversationMessage).values([
+      {
+        campaignId: createdCampaign.id,
+        runId: createdCampaign.id,
+        role: "operator",
+        status: "sent",
+        content: input.objective,
+      },
+      {
+        campaignId: createdCampaign.id,
+        runId: createdCampaign.id,
+        role: "motiongrid",
+        status: "running",
+        content: "I’m turning that objective into a reviewable campaign route.",
+      },
+    ]);
     return {
       campaign: createdCampaign,
       objective: ObjectiveSchema.parse(objectives[0]),
@@ -201,12 +223,216 @@ export async function campaignDetail(campaignId: string) {
     .from(target)
     .where(eq(target.campaignId, campaignId))
     .orderBy(asc(target.createdAt));
+  const approvals = await db
+    .select()
+    .from(approval)
+    .where(eq(approval.campaignId, campaignId))
+    .orderBy(asc(approval.requestedAt));
+  const conversation = await db
+    .select()
+    .from(campaignConversationMessage)
+    .where(eq(campaignConversationMessage.campaignId, campaignId))
+    .orderBy(asc(campaignConversationMessage.createdAt));
 
   return {
     campaign: CampaignSchema.parse(campaigns[0]),
     objective: ObjectiveSchema.parse(objectives[0]),
     plan: plans[0] === undefined ? null : PlanSchema.parse(plans[0]),
     targets: targets.map((row) => TargetSchema.parse(row)),
+    approvals: approvals.map((row) => ApprovalSchema.parse(row)),
+    conversation: conversation.map((row) =>
+      CampaignConversationMessageSchema.parse(row),
+    ),
+  };
+}
+
+export async function deleteCampaign(campaignId: string) {
+  const db = await database();
+  const campaigns = await db
+    .select({ id: campaign.id })
+    .from(campaign)
+    .where(eq(campaign.id, campaignId))
+    .limit(1);
+  if (campaigns[0] === undefined) {
+    throw new CampaignApiError("campaign_not_found", "Campaign not found.", 404);
+  }
+
+  const activeRuns = await db
+    .select({ id: run.id })
+    .from(run)
+    .where(
+      and(
+        eq(run.campaignId, campaignId),
+        inArray(run.status, ["pending", "running", "paused"]),
+      ),
+    );
+
+  try {
+    await Promise.all(
+      activeRuns.map((activeRun) => cancelCampaignWorkflow(activeRun.id)),
+    );
+  } catch {
+    throw new CampaignApiError(
+      "campaign_stop_failed",
+      "The campaign was kept because its active agents could not all be stopped.",
+      502,
+    );
+  }
+
+  const deleted = await db
+    .delete(campaign)
+    .where(eq(campaign.id, campaignId))
+    .returning({ id: campaign.id });
+  if (deleted[0] === undefined) {
+    throw new CampaignApiError("campaign_not_found", "Campaign not found.", 404);
+  }
+  return { campaignId: deleted[0].id, cancelledRunCount: activeRuns.length };
+}
+
+export async function continueCampaign(
+  input: z.output<typeof ContinueCampaignRequestSchema>,
+) {
+  const db = await database();
+  const runId = randomUUID();
+  const planId = randomUUID();
+  const created = await db.transaction(async (transaction) => {
+    const context = await transaction
+      .select({
+        workspaceId: campaign.workspaceId,
+        workspaceName: workspace.name,
+        connectedSources: workspace.connectedSources,
+        operatingBudgetCents: campaign.operatingBudgetCents,
+        commitBudgetCents: campaign.commitBudgetCents,
+        objectiveId: objective.id,
+        objectivePrompt: objective.prompt,
+      })
+      .from(campaign)
+      .innerJoin(workspace, eq(workspace.id, campaign.workspaceId))
+      .innerJoin(objective, eq(objective.campaignId, campaign.id))
+      .where(eq(campaign.id, input.campaignId))
+      .orderBy(asc(objective.createdAt))
+      .limit(1);
+    const campaignContext = context[0];
+    if (campaignContext === undefined) {
+      throw new CampaignApiError(
+        "campaign_context_missing",
+        "Campaign workspace or objective is missing.",
+        404,
+      );
+    }
+
+    const amendedObjective = `${campaignContext.objectivePrompt}\n\nOperator amendment: ${input.message}`;
+    await transaction
+      .update(objective)
+      .set({ prompt: amendedObjective, updatedAt: new Date() })
+      .where(eq(objective.id, campaignContext.objectiveId));
+    await transaction
+      .update(campaign)
+      .set({ status: "planning", updatedAt: new Date() })
+      .where(eq(campaign.id, input.campaignId));
+    await transaction
+      .update(approval)
+      .set({
+        status: "rejected",
+        decidedAt: new Date(),
+        decidedBy: "operator-amendment",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(approval.campaignId, input.campaignId),
+          eq(approval.status, "pending"),
+        ),
+      );
+
+    const runs = await transaction
+      .insert(run)
+      .values({
+        id: runId,
+        campaignId: input.campaignId,
+        planId: null,
+        kind: "replan",
+        status: "running",
+        startedAt: new Date(),
+      })
+      .returning();
+    const messages = await transaction
+      .insert(campaignConversationMessage)
+      .values([
+        {
+          campaignId: input.campaignId,
+          runId,
+          role: "operator",
+          status: "sent",
+          content: input.message,
+        },
+        {
+          campaignId: input.campaignId,
+          runId,
+          role: "motiongrid",
+          status: "running",
+          content:
+            "I’m revising the campaign route around that instruction. The plan will update as each agent finishes.",
+        },
+      ])
+      .returning();
+
+    return {
+      context: campaignContext,
+      objective: amendedObjective,
+      run: RunSchema.parse(runs[0]),
+      operatorMessage: CampaignConversationMessageSchema.parse(messages[0]),
+      assistantMessage: CampaignConversationMessageSchema.parse(messages[1]),
+    };
+  });
+
+  try {
+    await startCampaignWorkflow(runId, {
+      workspaceId: created.context.workspaceId,
+      campaignId: input.campaignId,
+      runId,
+      planId,
+      workspaceName: created.context.workspaceName,
+      connectedSources: created.context.connectedSources,
+      objective: created.objective,
+      budget: {
+        operating: {
+          currency: "USD",
+          amountMinor: created.context.operatingBudgetCents,
+        },
+        commit: {
+          currency: "INR",
+          amountMinor: created.context.commitBudgetCents,
+        },
+      },
+    });
+  } catch (error) {
+    await db
+      .update(run)
+      .set({
+        status: "failed",
+        failureReason:
+          error instanceof Error ? error.message : "Agent run failed to start.",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(run.id, runId));
+    await db
+      .update(campaignConversationMessage)
+      .set({
+        status: "failed",
+        content:
+          "I saved your instruction, but couldn’t start the revision. The last completed artifact is unchanged.",
+        updatedAt: new Date(),
+      })
+      .where(eq(campaignConversationMessage.id, created.assistantMessage.id));
+    throw error;
+  }
+
+  return {
+    operatorMessage: created.operatorMessage,
+    assistantMessage: created.assistantMessage,
+    run: created.run,
   };
 }
 

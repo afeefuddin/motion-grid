@@ -5,6 +5,7 @@ import {
   approval,
   assessment,
   campaign,
+  campaignConversationMessage,
   contact,
   edge,
   interaction,
@@ -59,6 +60,21 @@ export const NewCampaignSchema = campaignInsertBase;
 export const ObjectiveSchema = createSelectSchema(objective, {
   compiledSpec: JsonValueSchema,
 });
+
+export const CampaignConversationMessageSchema = createSelectSchema(
+  campaignConversationMessage,
+  {
+    role: z.enum(["operator", "motiongrid"]),
+    status: z.enum(["sent", "running", "completed", "failed"]),
+  },
+);
+export const NewCampaignConversationMessageSchema = createInsertSchema(
+  campaignConversationMessage,
+  {
+    role: z.enum(["operator", "motiongrid"]),
+    status: z.enum(["sent", "running", "completed", "failed"]),
+  },
+);
 export const NewObjectiveSchema = createInsertSchema(objective, {
   compiledSpec: JsonValueSchema,
 });
@@ -227,6 +243,9 @@ export const NewSuppressionSchema = createInsertSchema(suppression);
 export type Workspace = z.infer<typeof WorkspaceSchema>;
 export type Campaign = z.infer<typeof CampaignSchema>;
 export type Objective = z.infer<typeof ObjectiveSchema>;
+export type CampaignConversationMessage = z.infer<
+  typeof CampaignConversationMessageSchema
+>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type MotionAllocation = z.infer<typeof MotionAllocationSchema>;
 export type Run = z.infer<typeof RunSchema>;
