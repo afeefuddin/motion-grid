@@ -83,8 +83,8 @@ export default function Home() {
           <a href="#proof">Resources <ChevronDown size={13} /></a>
         </nav>
         <div className="header-actions">
-          <a className="login-link" href="#workbench">Log in</a>
-          <a className="button button--blue button--small" href="#workbench">Get a demo</a>
+          <a className="login-link" href="/campaigns">Log in</a>
+          <a className="button button--blue button--small" href="/campaigns/new">Start a campaign</a>
         </div>
       </header>
 
@@ -92,7 +92,7 @@ export default function Home() {
         <div className="hero-pill"><Sparkles size={14} /> One goal in. A complete GTM motion out. <ArrowRight size={14} /></div>
         <h1>GTM campaigns<br />operators love</h1>
         <p>MotionGrid is the all-in-one agentic GTM platform that finds the right market, builds an auditable plan, and runs approved work across your stack.</p>
-        <a className="button button--blue" href="#workbench">Build your first campaign</a>
+        <a className="button button--blue" href="/campaigns/new">Build your first campaign</a>
         <div className="trust-line"><span>★★★★★</span> Plan, approve, execute, and learn in one place</div>
 
         <div className="product-stage" id="workbench">

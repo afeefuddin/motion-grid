@@ -157,5 +157,25 @@ out which, and say so in your handoff.
 
 ## Handoff note
 
-_(fill in — especially any contract mismatch you found, and what the `?replay=1` path does and
-does not cover, since T10 depends on it as the offline fallback.)_
+Implemented 2026-08-08.
+
+- Added the authenticated campaign shell, campaign list, one-box campaign creation flow, plan,
+  Grid, evidence drawer, and approval queue under `apps/web/app/campaigns/**`. The landing-page
+  calls to action now enter this flow.
+- Live campaign detail uses the real campaign endpoints and one `EventSource` for the run. Live
+  and replay events pass through the same `projectRun` state projection, including reconnect
+  state, costs, targets, evidence, edges, approvals, warnings, and visible re-planning.
+- `?replay=1` uses exactly one fixture module. Its campaign payload, plan, and event transcript
+  all parse through the frozen contract schemas. It covers plan ranking, declined motions,
+  targets, documentary evidence, a warm-intro edge, costs, budget warning, re-plan, and plan
+  approval without contacting the backend.
+- The frozen contracts do not expose `profile.productionPath` on ranked candidates even though
+  this brief asks the UI to render it. `CampaignDetailResponseSchema` also omits assessments,
+  signals, edges, approvals, messages, and interactions; SSE can fill those only after the page
+  connects. There is no message-detail/update endpoint, so an approval event supplies a policy
+  reason and message ID but not the evidence-linked draft needed for editing. The UI does not
+  invent those values: score sorting, dropped-claim totals, provider production paths, and draft
+  editing remain blocked on contract/API additions.
+- Verification: repository TypeScript passes and Next production compilation passes. The build
+  then hits a Next 16/Node 26 internal `/_global-error` prerender invariant after compilation.
+  No unit tests were added or run, per instruction.
