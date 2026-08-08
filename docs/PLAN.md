@@ -22,7 +22,18 @@ Two constraints drive the structure:
 | Stack | Next.js App Router + Mastra v1 + Postgres | Heavier setup than Bun/SQLite; scope trimmed accordingly |
 | LLM access | **Pure Mastra** model router | Anthropic-specific features (citations, task budgets, advisor tool, fast mode, mid-conversation tool changes, programmatic tool calling) are **out** — see *Evidence verification* below for the substitute |
 | Postgres | Self-hosted; Apple container locally | One shared DB, **one migration owner** (T0) |
-| Timeline | 1–2 days, 4–6 parallel agents | Creator/Consumer are plan-only; allocation is deterministic, not agentic |
+| Timeline | 1–2 days, 4–6 parallel agents | Creator is plan-only; allocation is deterministic, not agentic |
+
+### Decisions taken after T3 (2026-08-08)
+
+| Decision | Choice | Consequence |
+|---|---|---|
+| Demo focus | **Orchestration** — how the decision gets made | T5's slot reassigned to the orchestrator; the plan screen becomes the hero; ranking must be visible, not implied |
+| Adapter selection | Model sets weights, **deterministic code ranks** | Auditable and reproducible; needs adapter `profile` metadata (C2) and ≥2 candidates per ranked capability |
+| Market data | Committed fixture **plus** a cached `generated` adapter | Off-script objectives work; determinism and offline both survive; the ranker gains a real choice |
+| `consumer.ads` | Declined at plan time, not executed | One reasoned refusal replaces a whole workflow branch |
+| Mock UI layer | **Cut** | T9 builds once against real endpoints; one recorded-replay file is the only fixture |
+| Pre-T0 code | **Deleted** (`packages/**`, `apps/agent-runtime/**`) | Three competing sources of truth for types collapse to one |
 
 ---
 
@@ -60,13 +71,22 @@ the citations version and costs ~20 lines.
 
 ## Scope
 
+**Revised after T3.** The demo's centre of gravity is **how a decision gets made**, not how many
+motions execute. What follows reflects that.
+
 | | In |
 |---|---|
+| **Decides** | Motion selection, capability selection, and **ranked adapter binding** with every candidate scored and every loser's reason recorded — plus **re-planning when the harness refuses** |
 | **Executes fully** | `business.local` — discover → evidence → qualify → contact → draft → **live send** → reply |
 | **Plans + allocates** | `creator` — seeded index, scored, deterministic roster under budget |
-| **Plans only** | `consumer.ads` — segment + ad plan with cost estimate |
+| **Declined on stage** | `consumer.ads`, `business.online`, `consumer.email` — registered motions the orchestrator visibly refuses, with reasons |
 | **Cross-motion** | Shared budget split, shared graph, discovered `mentions` edges → warm-intro badge |
-| **Cut for time** | Ledger screen, separate roster screen, replay, follow-up waves, `business.online` and `consumer.email` execution, auth, multi-tenancy |
+| **Cut for time** | Ledger screen, separate roster screen, follow-up waves, auth, multi-tenancy, **mock UI layer**, **`consumer.ads` execution** |
+
+An orchestrator that refuses work it cannot justify is more credible than one that always says
+yes. `consumer.ads` declined with *"no first-party customer data source is connected"* is a
+better forty seconds than a fourth branch quietly producing an estimate — and it costs a
+sentence instead of a workflow.
 
 ---
 
@@ -183,20 +203,41 @@ Only two fields force branching in the engine: `allocation` and `contactModel: '
 A capability is a Zod contract, not a vendor. Each is exposed to Mastra as a tool via
 `createTool`, so agents select capabilities and the registry resolves the bound adapter.
 
-| Capability | Demo adapter | Mode | Production path |
+| Capability | Demo adapters | Modes | Production path |
 |---|---|---|---|
-| `geo.query` | `sim/market` | sim | Outscraper, Google Places |
+| `geo.query` | `sim/market`, `generated/market` | sim, generated | Outscraper, Google Places |
 | `db.query` | `sim/index` | sim | Apollo, Modash |
-| `web.fetch` | `sim/market` | sim | Firecrawl |
-| `reviews.fetch` | `sim/market` | sim | Outscraper, Yelp |
-| `people.find` | `sim/market` | sim | Apollo, Hunter |
+| `web.fetch` | `sim/market`, `generated/market` | sim, generated | Firecrawl |
+| `reviews.fetch` | `sim/market`, `generated/market` | sim, generated | Outscraper, Yelp |
+| `people.find` | `sim/market`, `generated/market` | sim, generated | Apollo, Hunter |
 | `segment.build` | `sim/cohort` | sim | first-party warehouse |
-| `message.send:whatsapp` | `twilio` | **live** | unchanged |
-| `message.send:email` | `resend` | **live** | unchanged |
-| `ads.plan` | `sim/estimator` | plan-only | Google Ads API |
+| `message.send` | `twilio` (whatsapp), `resend` (email) | **live** | unchanged |
+| `ads.plan` | `sim/estimator` | plan | Google Ads API |
 
-**This table is the go-to-prod answer** — swap the adapter, the contract and the agent are
-untouched.
+There is **one** `message.send` capability with a `channel` field, not one per channel — see
+`contracts/enums.ts`.
+
+**This table is the go-to-prod answer, and it is now something the audience watches rather than
+something we assert.** Multiple adapters behind one contract means T5's ranker has a real choice
+to make, and the plan screen renders that choice as a ranked table with scores and reasons.
+Adding Outscraper is another row in that table.
+
+### The `generated` adapter — runtime market synthesis
+
+The committed fixture covers six Bengaluru localities and six categories. An objective outside
+that — *"dental clinics in Pune"* — used to return nothing. The `generated` adapter (T8) fills
+the gap behind the same contracts, with a disk cache keyed by `(geography, category, limit,
+seed)`:
+
+- **Cache hit** → cached world, zero model calls, byte-identical to last time.
+- **Cache miss** → one model call, validated against `SimWorldSchema`, cached, returned.
+
+So determinism survives, offline survives, and the demo can take a request from the room. The
+sim adapter still wins the ranking whenever the fixture covers the ask — it is free and
+instant, and the ranker is honest about that.
+
+**The hard rule holds for both: the generator emits artifacts, never signals.** Break it and the
+evidence pipeline is a puppet show.
 
 ### The synthetic market — Bengaluru
 
@@ -229,15 +270,19 @@ by the seeder. Break this and the demo is a puppet show.
 ```
 campaignWorkflow
   .then(compileObjectiveStep)        Opus-tier agent → CampaignSpec (structuredOutput)
-  .then(planStep)                    → Plan: motions, bindings, dual budget, policies
+  .then(planStep)                    orchestrator → motions, DECLINED motions,
+                                     RANKED bindings, dual budget, policies
   .then(approvalGate)                suspend() → resume on human approve
   .parallel([                        motion fan-out, failure isolated per motion
      businessLocalWorkflow,
      creatorWorkflow,
-     consumerAdsWorkflow,
-  ])
+  ])                                 consumer.ads is declined at plan time, not run
   .then(synthesizeStep)              edge discovery, dedup, rollup
   .commit()
+
+  on refusal (binding unresolvable | budget denied):
+     → replan → re-rank under the new constraint → rebind → continue
+     capped at two, then fail with a stated reason
 
 businessLocalWorkflow
   .then(discoverStep)                one call, not per-target
@@ -257,9 +302,28 @@ targetWorkflow                       nested → each target completes independen
 **Three model calls per target.** Assessment reasons over evidence, never over raw pages, so
 it cannot smuggle in an unverified claim.
 
-**Agent boundary rule:** agents where reasoning is open-ended (objective compilation,
-planning, evidence, drafting, reply classification). Deterministic code everywhere else —
-allocation, edge discovery, policy, budget. Sixty targets is *not* sixty agents.
+**Agent boundary rule:** agents where reasoning is open-ended (objective compilation, planning,
+**ranking weights**, evidence, drafting, reply classification). Deterministic code everywhere
+else — ranking itself, allocation, edge discovery, policy, budget. Sixty targets is *not* sixty
+agents.
+
+### How a decision gets made
+
+This is the product, so the split inside a decision matters as much as the boundary around it:
+
+> **The model decides what matters. Deterministic code decides who wins, and shows its work.**
+
+For every capability, the model returns four weights — cost, freshness, confidence, coverage —
+derived from the objective, plus one sentence explaining them. Deterministic code then scores
+every candidate adapter against its declared `profile`, sums the weighted dimensions, and picks
+the highest eligible score, breaking ties by `adapterId`.
+
+The persisted `RankedBinding` holds **every** candidate with its scores and the reason it won or
+lost. That array is what the plan screen renders.
+
+An LLM picking a vendor is unauditable and irreproducible; you cannot answer *"why that one?"*
+and you cannot promise the same answer tomorrow. This split answers both with a number and a
+sentence, and it is the better engineering regardless of the demo.
 
 ### Target state machine
 
@@ -277,42 +341,51 @@ more credible than sixty green rows.
 
 ## Repository layout & file ownership
 
-**No two tasks write the same path.** `src/contracts/` is written by T0 and thereafter
-read-only for everyone.
+**No two tasks write the same path.** `src/contracts/` is written by T0, amended once by C2,
+and read-only for everyone else at all times.
 
 ```
 motion-grid/
 ├── docker-compose.yml                    T0
 ├── drizzle.config.ts                     T0
-├── app/
-│   ├── layout.tsx · page.tsx             T5
-│   ├── campaigns/**                      T5
-│   └── api/
-│       ├── campaigns/**                  T7
-│       ├── stream/**                     T7
-│       └── webhooks/**                   T7
-├── components/**                         T5
+├── package.json · tsconfig*.json         T0 → C1
+├── apps/web/
+│   ├── app/
+│   │   ├── layout.tsx · page.tsx         T9
+│   │   ├── campaigns/**                  T9
+│   │   └── api/**                        T7   (campaigns · stream · messages · webhooks)
+│   ├── components/**                     T9
+│   └── lib/**                            T7   (twilio-webhook, mastra-client)
 ├── src/
-│   ├── contracts/**                      T0  ← read-only for all others
+│   ├── contracts/**                      T0 → C2 amends once → frozen
 │   ├── db/
-│   │   ├── schema.ts                     T0  ← read-only for all others
+│   │   ├── schema.ts                     T0 → C2 (migration owner)
 │   │   └── repositories/**               T1
-│   ├── capabilities/**                   T3
-│   ├── adapters/sim/**                   T2
+│   ├── capabilities/**                   T3  (adapter.ts touched by C2)
+│   ├── orchestrator/**                   T5  ← selection, ranking, re-plan
+│   ├── adapters/sim/**                   T2  (profiles added by C2)
+│   ├── adapters/generated/**             T8  ← runtime market synthesis + cache
 │   ├── adapters/live/**                  T7
 │   ├── sim/**                            T2  (generator + fixtures)
 │   ├── motions/**                        T4
-│   ├── policy/** · ledger/**             T3
+│   ├── policy/** · ledger/**             T3  (one fix each by C2)
 │   ├── evidence/**                       T6
 │   ├── synthesis/**                      T8
 │   └── mastra/
 │       ├── index.ts                      T0 stub → T6 owns
 │       ├── agents/** · tools/**          T4
 │       └── workflows/**                  T6
+├── scripts/**                            T8
 └── docs/
-    ├── PLAN.md
-    └── tasks/T*.md
+    ├── PLAN.md          ← authoritative for the build
+    ├── PRODUCT.md       ← original product doc; PLAN.md wins on conflict
+    └── tasks/{C,T}*.md
 ```
+
+**Deleted by C1:** `packages/**` and `apps/agent-runtime/**` — pre-T0 code declaring a
+three-motion enum, a second `PolicyDecision`, and a third `CampaignRepository`, none of it
+typechecked. Three sources of truth is three too many. `src/mocks/**` is never created; the
+mock-UI task is cut.
 
 ---
 
@@ -321,19 +394,22 @@ motion-grid/
 ```
         ┌──────────────── T0 contracts + scaffold (BLOCKING) ────────────────┐
         │                                                                    │
-   ┌────┴────┬──────────┬──────────┬──────────┬──────────┐                  │
-   T1 db     T2 sim     T3 caps/   T4 agents  T5 UI                          │
-   repos     world      policy     + motions  (mocks)                        │
-   └────┬────┴─────┬────┴─────┬────┴─────┬────┴─────┬────┘                  │
-        │          │          │          │          │                       │
-        └──────────┴────┬─────┴──────────┘          │                       │
-                        │                            │                       │
-              ┌─────────┴─────────┬──────────────┐   │                       │
-              T6 workflows        T7 api+live    T8 seed+synthesis           │
-              + evidence          + webhooks                                 │
-              └─────────┬─────────┴──────┬───────┘                           │
-                        │                │                                    │
-                        └────── T9 wire UI ──────┴── T10 rehearse ────────────┘
+   ┌────┴────┬──────────┬──────────┬──────────┐                             │
+   T1 db     T2 sim     T3 caps/   T4 agents                                 │
+   repos     world      policy     + motions                                 │
+   └────┬────┴─────┬────┴─────┬────┴─────┬────┘                             │
+        │          │          │          │                                  │
+        └──────────┴────┬─────┴──────────┘                                  │
+                        │                                                    │
+              ┌─────────┴─────────┐                                          │
+              C1 cleanup     C2 contracts (BLOCKING for Wave 2)              │
+              └─────────┬─────────┘                                          │
+        ┌──────────┬────┴─────┬──────────┐                                  │
+        T5 orch    T6 wf +    T7 api +   T8 seed + generated                │
+        + ranking  evidence   live       + synthesis                        │
+        └──────────┴────┬─────┴──────────┘                                  │
+                        │                                                    │
+                        └────────── T9 UI ──────┴── T10 rehearse ───────────┘
 ```
 
 ### Wave 0 — blocking · 1 agent · ~1.5h
@@ -365,23 +441,36 @@ container, and a smoke test imports every schema and parses one fixture of each.
 | **T2 · Sim world** | `src/sim/**`, `src/adapters/sim/**` | `generate.ts` producing committed fixtures (60 businesses, 24 creators, 2–3 seeded `mentions`); all six sim adapters implementing their capability contracts | Every adapter's output parses against its contract; fixtures committed; generator is seed-deterministic |
 | **T3 · Capabilities, policy, ledger** | `src/capabilities/**`, `src/policy/**`, `src/ledger/**` | Registry + adapter binding + resolution; policy engine returning `allow \| deny \| require_approval` with reason; dual-currency cost ledger with shadow costs | Policy decision table is unit-tested exhaustively; ledger arithmetic tested in both currencies |
 | **T4 · Agents & motions** | `src/mastra/agents/**`, `src/mastra/tools/**`, `src/motions/**` | Five `defineMotion` declarations + rubrics; Mastra agents (objective compiler, planner, evidence, drafter, reply classifier) with `structuredOutput` schemas; capabilities wrapped as `createTool` | Each agent callable standalone with a fixture input and returns schema-valid output |
-| **T5 · UI** | `app/**` (non-api), `components/**` | Campaign list, new-campaign, plan screen, **the Grid**, evidence drawer, approval queue — all against contract-shaped mock data | Every screen renders from mocks; no backend dependency; SSE event union consumed from a mock emitter |
+*(T5's original mock-UI task is cut — see Wave 1.5 and T9.)*
 
-### Wave 2 — 3 agents parallel · ~4h
+### Wave 1.5 — 2 agents parallel · ~1.5h · added after T3
 
 | Task | Owns | Deliverable | Done when |
 |---|---|---|---|
-| **T6 · Workflows + evidence** | `src/mastra/workflows/**`, `src/evidence/**`, `src/mastra/index.ts` | `campaignWorkflow`, per-motion workflows, nested `targetWorkflow`; evidence step with **deterministic excerpt verification**; approval gate via `suspend`/`resume` | Full 60-target run completes against sim adapters with zero errors; every persisted signal passes verification |
-| **T7 · API, live delivery, webhooks** | `app/api/**`, `src/adapters/live/**` | Route handlers, SSE stream endpoint, Twilio WhatsApp + Resend adapters behind `message.send`, inbound webhook → reply classifier → `interaction` | One WhatsApp and one email actually deliver; inbound reply writes an `interaction` row |
-| **T8 · Seed, synthesis, demo data** | `src/synthesis/**`, `scripts/**` | Workspace seed, demo campaign preset, deterministic `mentions` edge discovery (fuzzy caption↔business-name match), creator allocation (greedy under `commit_budget` with `audience_overlap` penalty) | `pnpm seed` gives a demo-ready DB; edge discovery finds the seeded mentions; allocation respects budget and excludes over-rate creators with a stated reason |
+| **C1 · Repo cleanup** | `packages/**`, `apps/agent-runtime/**`, root configs | Delete the pre-T0 architecture; one Next app at `apps/web`; `pnpm typecheck` covers it; a real `pnpm test`; `plan.md` → `docs/PRODUCT.md` | No `@motiongrid/*` imports remain; typecheck proven to cover `apps/web`; the Twilio/Resend routes are byte-identical |
+| **C2 · Contract amendment** | `src/contracts/**` + one migration | Adapter `profile` metadata, `generated` mode, `RankedBinding`, declined-motion and re-plan fields, structured budget warning, `ads.plan` unit fix, orchestration SSE events | Every addition optional or defaulted so **T4's current output still parses**; existing policy tests pass unchanged; contracts re-frozen |
 
-### Wave 3 — 1–2 agents · ~2h
+**C2 blocks Wave 2.** It is the one deliberate unfreeze, it is small, and it has a single owner
+precisely so it does not become five silent edits.
 
-**T9 · Wire UI** — replace T5's mocks with real endpoints and the live SSE stream. Owns the
-diff in `app/**` and `components/**`; must not change contracts.
+### Wave 2 — 4 agents parallel · ~4h
 
-**T10 · Rehearse** — seed, run end-to-end three times, then once with wifi off. Fix what
-breaks. Record a screen capture as the ultimate fallback.
+| Task | Owns | Deliverable | Done when |
+|---|---|---|---|
+| **T5 · Orchestrator** | `src/orchestrator/**` | Motion selection with declines; capability narrowing; **model-weighted, deterministically-scored adapter ranking** keeping every loser with its reason; re-plan on binding failure or budget denial | Ranking is deterministic and unit-tested with zero model calls; a budget denial mid-run rebinds and continues; malformed weights rejected, not normalised |
+| **T6 · Workflows + evidence** | `src/mastra/workflows/**`, `src/evidence/**`, `src/mastra/index.ts` | `campaignWorkflow`, per-motion workflows, nested `targetWorkflow`; evidence step with **deterministic excerpt verification**; approval gate via `suspend`/`resume`; re-plan trigger and resumption | Full 60-target run completes against sim adapters with zero errors; every persisted signal passes verification; every capability call goes through `executeCapability` |
+| **T7 · API, live delivery, webhooks** | `apps/web/app/api/**`, `apps/web/lib/**`, `src/adapters/live/**` | Route handlers, SSE stream, **adopt** the existing Twilio + Resend routes behind `message.send`, inbound webhook → reply classifier → `interaction` | One WhatsApp and one email actually deliver; inbound reply writes an `interaction`; orchestration events stream as decisions are made |
+| **T8 · Seed, generated market, synthesis** | `src/synthesis/**`, `src/adapters/generated/**`, `scripts/**` | Workspace seed; **cached runtime market synthesis** behind the sim contracts; deterministic `mentions` edge discovery; creator allocation (greedy under `commit_budget`, `audience_overlap` penalty) | `pnpm seed` idempotent; cache hits make zero model calls; edge discovery finds the seeded mentions with no false positives; allocation excludes over-rate creators with a stated reason |
+
+### Wave 3 — 1–2 agents · ~4h
+
+**T9 · UI** — build every screen once against real endpoints. The **plan screen is the hero**:
+declined motions with reasons, ranked adapter tables with losers, and a visible re-plan. One
+recorded-replay file behind `?replay=1` is the only fixture, and it doubles as T10's offline
+fallback.
+
+**T10 · Rehearse** — seed, run end-to-end three times, then once with wifi off. Rehearse the
+budget-denial re-plan until it is boring. Record a screen capture as the ultimate fallback.
 
 ---
 
@@ -422,19 +511,35 @@ five-minute check that would otherwise surface at hour six.
 
 ## Demo script (4 minutes)
 
-1. **0:00** — "GTM tools got better at writing emails and reply rates fell below 1%. The
-   problem isn't the writing — it's that there's no reason to reply."
-2. **0:15** — Type the objective. Plan streams: three motions, budget split into operating vs
-   commit, policy list, approval gate.
-3. **1:00** — Approve. The Grid fills with mixed-motion rows. Ticker climbs.
-4. **1:40** — Evidence drawer. "Every excerpt is checked against the source before we store
-   it. Two claims got dropped on this lead — you can see the count."
-5. **2:25** — Warm-intro badge. "A creator this campaign found already posted about this
-   salon. Two motions, one graph. Three separate tools can't do that."
-6. **2:50** — Approval queue → approve. **"Check your phone."**
-7. **3:25** — Judge replies. Grid flips to `engaged` live.
-8. **3:45** — "Market data is simulated. The reasoning, policies, verification, messages and
-   that WhatsApp are real. Swapping the sim adapter for Outscraper is one line."
+Reweighted for the orchestration focus — the plan screen now carries the first ninety seconds.
+
+1. **0:00** — "GTM tools got better at writing emails and reply rates fell below 1%. The problem
+   isn't the writing — it's that there's no reason to reply. And no tool can tell you why it
+   picked what it picked."
+2. **0:15** — Type the objective. The plan streams: motions selected, **`consumer.ads` declined
+   with its reason**, budget split into operating (USD) vs commit (₹).
+3. **0:50** — **The ranked adapter table.** "The model didn't pick the provider. It decided what
+   mattered for *this* objective — that's its reasoning, one sentence — and then the ranking is
+   deterministic. Every candidate, every score, why each loser lost. Same objective tomorrow,
+   same ranking."
+4. **1:25** — Approve. The Grid fills with mixed-motion rows. Ticker climbs in two currencies.
+5. **1:55** — **Drop the budget mid-run.** Policy denies, the orchestrator re-plans, the binding
+   changes on screen, the run continues. "It got told no, and it reasoned its way to a different
+   plan instead of throwing."
+6. **2:25** — Evidence drawer. "Every excerpt is checked against the source before we store it.
+   Two claims got dropped on this lead — you can see the count."
+7. **2:50** — Warm-intro badge. "A creator this campaign found already posted about this salon.
+   Two motions, one graph. Three separate tools can't do that."
+8. **3:10** — Approval queue → approve. **"Check your phone."**
+9. **3:35** — Judge replies. Grid flips to `engaged` live.
+10. **3:50** — "Market data is simulated. The reasoning, the ranking, the policies, the
+    verification, the messages and that WhatsApp are real. And that bottom row in the ranking
+    table is Outscraper — swapping to it is a config change, because the agent never knew which
+    provider it was talking to."
+
+**Spare thirty seconds?** Take an objective from the room. T8's generated adapter handles a city
+nobody rehearsed — but only run this if the cache pre-warm covers it and you have rehearsed the
+cache-miss path once.
 
 ---
 
@@ -448,7 +553,11 @@ five-minute check that would otherwise surface at hour six.
 | Twilio sandbox needs each recipient to text a join phrase | Pre-join the demo phone the night before; **Telegram bot is the 10-minute fallback** |
 | **SMS to Indian numbers needs DLT registration** with a telecom operator — days of lead time | **Don't build SMS.** WhatsApp via the Twilio sandbox sidesteps it entirely, and is the channel Indian SMBs actually use |
 | Resend on a bare domain only sends to your own address | Exactly the demo case — don't attempt domain verification |
-| Parallel agents drifting on contracts | Contracts frozen after T0; changes escalate, never edited silently |
+| Parallel agents drifting on contracts | Contracts frozen after T0; **exactly one owned unfreeze (C2)**, additive only, re-frozen on completion; everything else escalates |
+| Ranking looks like theatre if every capability has one candidate | Each ranked capability must have ≥2 real candidates with genuinely different profiles — that is why the `generated` adapter earns its place beyond the off-script case |
+| Model returns weights that don't sum to 1 | Reject and retry; never normalise silently. A model that can't produce four numbers summing to 1 shouldn't be trusted with the campaign |
+| Re-plan loops on stage | Capped at two, then a clean failure with a stated reason. A clean failure beats a loop |
+| `executeCapability` has never met a real adapter | Nothing outside `src/capabilities/` imports it yet. **T6 wires one `geo.query` call through the funnel in hour one**, before composing anything |
 | Next.js HMR creating duplicate `PostgresStore` instances | Store the instance on `globalThis`, per Mastra's documented guidance |
 | Hackathon wifi | Fixtures are local; only Anthropic + Twilio/Resend need network. Record a full run |
 
@@ -456,10 +565,17 @@ five-minute check that would otherwise surface at hour six.
 
 ## Verification
 
-- `pnpm typecheck` clean with **zero `as` casts and zero `any`** across the repo — grep the
-  diff; a cast means a contract is wrong.
+- `pnpm typecheck` clean with **zero `as` casts and zero `any`** across the repo, **including
+  `apps/web`** (C1 makes it actually covered) — grep the diff; a cast means a contract is wrong.
 - `pnpm test` — capability contract round-trips, motion registry validation, policy decision
-  table, dual-currency ledger arithmetic, repository round-trips.
+  table, dual-currency ledger arithmetic, repository round-trips, **adapter ranking**.
+- **Ranking determinism and honesty**: the same spec twice produces identical candidate order
+  and identical scores with no model call on the second run, and every `RankedBinding` retains
+  every candidate considered with the reason it won or lost.
+- **Re-plan**: an operating-budget denial mid-run rebinds to a cheaper adapter and the run
+  continues; three forced failures fail cleanly with a stated reason rather than looping.
+- **Generated adapter**: a cache hit makes zero model calls and is byte-identical to the
+  previous run; no generated world contains a signal, score, or finding.
 - **Evidence verification**: every persisted documentary signal satisfies
   `normalize(source).includes(normalize(excerpt))`; the assessment records `droppedCount`.
 - **Offline run**: network disabled to sim adapters; a 60-target campaign reaches

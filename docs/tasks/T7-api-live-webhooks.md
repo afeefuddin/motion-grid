@@ -1,6 +1,6 @@
 # T7 · API Routes, Live Delivery, Webhooks
 
-**Wave 2 · parallel with T6, T8 · ~4h · depends on T1, T3, T4**
+**Wave 2 · parallel with T5, T6, T8 · ~4h · depends on T1, T3, T4, C2**
 
 The only task that touches the outside world. You own the moment the demo lands on someone's
 phone — **start the tunnel and Twilio setup in your first fifteen minutes**, not your last.
@@ -8,25 +8,50 @@ phone — **start the tunnel and Twilio setup in your first fifteen minutes**, n
 ## Owned paths (exclusive write)
 
 ```
-app/api/**
+apps/web/app/api/**
+apps/web/lib/**
 src/adapters/live/**
 ```
 
+## You are inheriting working code — read this first
+
+`apps/web` already contains **functioning Twilio and Resend integrations** from before T0, and
+C1 was explicitly forbidden from touching them:
+
+```
+apps/web/app/api/messages/email/send/route.ts       Resend send, server-side allowlist
+apps/web/app/api/messages/whatsapp/send/route.ts    Twilio WhatsApp send, allowlist
+apps/web/app/api/webhooks/twilio/whatsapp/route.ts  inbound WhatsApp
+apps/web/app/api/webhooks/twilio/status/route.ts    delivery status
+apps/web/lib/twilio-webhook.ts                      signature verification
+.env.example + README.md                            setup for both, already written
+```
+
+**Adopt and refactor these; do not rewrite them.** The allowlists and signature verification
+are the parts most likely to be got wrong under time pressure, and they are already right. Your
+job is to move the send logic behind the `message.send` capability contract so it runs through
+T3's `executeCapability` funnel and policy gate, and to keep the route handlers as thin
+entry points. C1's handoff note lists any import these files lost when `packages/**` was
+deleted.
+
 ## Read-only
 
-`src/contracts/**` (frozen — especially `contracts/api.ts`) · `src/db/repositories/**` (T1) ·
-`src/capabilities|policy|ledger/**` (T3) · `src/mastra/**` (T4/T6)
+`src/contracts/**` (frozen again after C2 — especially `contracts/api.ts`) ·
+`src/db/repositories/**` (T1) · `src/capabilities|policy|ledger/**` (T3) ·
+`src/orchestrator/**` (T5) · `src/mastra/**` (T4/T6)
 
-Implement the `Adapter` interface defined in **T3's brief and handoff note** — the same one
-T2's sim adapters implement.
+Implement the `Adapter` interface from **T3's handoff note** — the same one T2's sim adapters
+implement — including the `profile` metadata C2 added. Declare it honestly: the live adapters
+are the ones whose `expectedConfidence` and cost should make T5's ranker prefer them when the
+objective calls for real data, and avoid them when it doesn't.
 
 ## Forbidden
 
-`app/**` outside `api/` (T5/T9), everything else in `src/`.
+`apps/web/app/**` outside `api/` (T9), everything else in `src/`.
 
 ## Deliverables
 
-### 1. Route handlers — `app/api/**`
+### 1. Route handlers — `apps/web/app/api/**`
 
 ```
 POST   /api/campaigns                  create → compile objective (streams)
@@ -45,18 +70,26 @@ parse boundary — after it, the type is known and no further checking is needed
 
 ### 2. SSE stream
 
-`GET /api/stream/:runId` emits the event union T5 already renders against. Do not invent event
-shapes; if you need one that isn't in `contracts/api.ts`, **stop and escalate**.
+`GET /api/stream/:runId` emits the event union in `contracts/api.ts`. Do not invent event
+shapes; if you need one that isn't there, **stop and escalate**.
 
-Set `Cache-Control: no-store`, `Connection: keep-alive`, and send a heartbeat so proxies
-don't drop the connection mid-demo.
+C2 added the orchestration events — `motion_selected`, `motion_declined`, `capability_ranked`,
+`binding_chosen`, `policy_warning`, `replan_started`. These drive the plan screen, which is the
+demo's hero. Emit them as T5's orchestrator produces the decisions, not batched at the end;
+watching the ranking resolve is the point.
+
+Set `Cache-Control: no-store`, `Connection: keep-alive`, and send a heartbeat so proxies don't
+drop the connection mid-demo.
 
 ### 3. Live adapters — `src/adapters/live/**`
 
-| Adapter | Capability | Notes |
-|---|---|---|
-| `twilio.whatsapp` | `message.send:whatsapp` | **Twilio WhatsApp sandbox** |
-| `resend.email` | `message.send:email` | Resend test domain |
+There is **one** `message.send` capability with a `channel` field, not one per channel — check
+`contracts/enums.ts` before you design around the older PLAN.md wording.
+
+| Adapter | Capability | Channel | Notes |
+|---|---|---|---|
+| `twilio.whatsapp` | `message.send` | `whatsapp` | **Twilio WhatsApp sandbox** |
+| `resend.email` | `message.send` | `email` | Resend test domain |
 
 **WhatsApp is the primary channel** — we're demoing to an Indian audience where WhatsApp is
 how local businesses actually transact. Format messages as WhatsApp messages: short, no
@@ -104,15 +137,18 @@ This is demo beat 7. It must work without a page refresh.
 - [ ] One WhatsApp message actually delivers to the demo phone
 - [ ] One email actually delivers
 - [ ] Inbound reply writes an `interaction` and the SSE stream reflects it without a refresh
-- [ ] Every send passes the policy gate; a denied send never hits the network
-- [ ] SSE events match `contracts/api.ts` exactly
-- [ ] Webhook signature verification in place
-- [ ] `grep -rn " as \| any" app/api src/adapters/live` returns nothing
+- [ ] Every send goes through `executeCapability` and the policy gate; a denied send never hits
+      the network
+- [ ] The inherited allowlists and signature verification still work after the refactor
+- [ ] SSE events match `contracts/api.ts` exactly, including C2's orchestration events
+- [ ] Orchestration events stream as decisions are made, not batched at the end
+- [ ] Live adapters declare an honest `profile` so T5's ranker can weigh them
+- [ ] `grep -rn " as \| any" apps/web/app/api apps/web/lib src/adapters/live` returns nothing
 - [ ] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — especially the tunnel URL setup, Twilio join phrase, and anything T9 needs about
-the SSE connection)_
+_(fill in — especially the tunnel URL setup, Twilio join phrase, what changed in the inherited
+routes, and anything T9 needs about the SSE connection)_

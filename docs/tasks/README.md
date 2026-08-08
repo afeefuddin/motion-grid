@@ -10,30 +10,54 @@ Read `../PLAN.md` only if you need product context. The brief is authoritative f
 ```
         ┌──────────── T0 contracts + scaffold (BLOCKING) ────────────┐
         │                                                            │
-   ┌────┴────┬──────────┬──────────┬──────────┬──────────┐          │
-   T1 db     T2 sim     T3 caps/   T4 agents  T5 UI                  │
-   repos     world      policy     + motions  (mocks)                │
-   └────┬────┴─────┬────┴─────┬────┴─────┬────┴─────┬────┘          │
-        └──────────┴────┬─────┴──────────┘          │               │
-              ┌─────────┴─────────┬──────────────┐  │               │
-              T6 workflows        T7 api + live  T8 seed +          │
-              + evidence          + webhooks     synthesis          │
-              └─────────┬─────────┴──────┬───────┘                  │
-                        └──── T9 wire UI ─┴── T10 rehearse ─────────┘
+   ┌────┴────┬──────────┬──────────┬──────────┐                     │
+   T1 db     T2 sim     T3 caps/   T4 agents                         │
+   repos     world      policy     + motions                         │
+   └────┬────┴─────┬────┴─────┬────┴─────┬────┘                     │
+        │          │          │          │                          │
+        └──────────┴────┬─────┴──────────┘                          │
+                        │                                            │
+              ┌─────────┴─────────┐                                 │
+              C1 cleanup    C2 contract amendment (BLOCKING for W2) │
+              └─────────┬─────────┘                                 │
+        ┌───────────┬───┴────────┬────────────┐                     │
+        T5 orch     T6 workflows T7 api+live  T8 seed +             │
+        + ranking   + evidence   + webhooks   generated + synthesis │
+        └───────────┴────┬───────┴────────────┘                     │
+                         └──── T9 UI ────┴── T10 rehearse ──────────┘
 ```
 
-| Wave | Tasks | Parallel | Budget |
-|---|---|---|---|
-| 0 | T0 | no — blocking | ~1.5h |
-| 1 | T1 T2 T3 T4 T5 | 5 agents | ~4h |
-| 2 | T6 T7 T8 | 3 agents | ~4h |
-| 3 | T9 T10 | 1–2 agents | ~2h |
+| Wave | Tasks | Parallel | Budget | Status |
+|---|---|---|---|---|
+| 0 | T0 | no — blocking | ~1.5h | done |
+| 1 | T1 T2 T3 T4 | 4 agents | ~4h | T1–T3 done · T4 in flight |
+| 1.5 | C1 C2 | 2 agents | ~1.5h | **C2 blocks Wave 2** |
+| 2 | T5 T6 T7 T8 | 4 agents | ~4h | |
+| 3 | T9 T10 | 1–2 agents | ~4h | |
+
+### What changed after T3
+
+- **The demo focus moved to orchestration.** How a decision gets made — motion selection,
+  capability selection, ranked adapter binding, and re-planning when the harness refuses — is
+  the product. T5's slot was reassigned to it.
+- **T5's mock-UI task is cut.** Building screens against mocks and rewiring them in T9 was two
+  passes at one screen set. T9 now builds the UI once against real endpoints, with a single
+  recorded-replay file as the offline fallback.
+- **`consumer.ads` execution is cut.** It is now *declined at plan time with a stated reason*,
+  which is a better demo beat than a fourth branch producing an estimate.
+- **C1 and C2 are new.** C1 removes the pre-T0 architecture still sitting in `packages/**` and
+  `apps/agent-runtime/**`, which contradicts `src/contracts/`. C2 is the single owned contract
+  unfreeze that ranking needs. Contracts freeze again the moment C2 lands.
+- **The UI lives at `apps/web/`,** not the repo root. C1 corrects every brief that says
+  otherwise.
 
 ## Non-negotiables
 
-1. **Contracts are frozen after T0.** If you need a schema change, **stop and escalate**.
-   Do not edit `src/contracts/` or `src/db/schema.ts` — a silent edit breaks five agents.
-2. **Only T0 runs migrations.** Everyone else assumes the schema exists.
+1. **Contracts are frozen after T0**, with exactly one exception: **C2**, which owns a single
+   additive amendment and re-freezes them on completion. Everyone else, before and after:
+   **stop and escalate**. Do not edit `src/contracts/` or `src/db/schema.ts` — a silent edit
+   breaks five agents.
+2. **Only T0 and C2 run migrations.** Everyone else assumes the schema exists.
 3. **Write only inside your owned paths.** Every brief lists them explicitly.
 4. **End with a handoff note** appended to your own brief file: what you built, contract
    gaps you hit, what the next wave must know.

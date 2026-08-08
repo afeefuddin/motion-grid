@@ -1,51 +1,131 @@
-# T9 · Wire the UI
+# T9 · The UI — built once, against real endpoints
 
-**Wave 3 · ~2h · depends on T5, T6, T7, T8**
+**Wave 3 · ~4h · depends on T5, T6, T7, T8**
 
-Replace T5's mocks with real endpoints and the live SSE stream. This should be a small,
-boring diff. If it isn't, a contract drifted somewhere and that's the real finding.
+> This task absorbed the cut T5. There is **no mock layer** — building screens against mocks
+> and then rewiring them was two passes at one screen set and a whole reconciliation surface.
+> You build each screen once, against the real endpoint, and the contracts make that safe.
 
 ## Owned paths (exclusive write)
 
 ```
-app/**          (everything EXCEPT app/api/**)
-components/**
-src/mocks/**    (deleting it)
+apps/web/app/**          (everything EXCEPT apps/web/app/api/**)
+apps/web/components/**
 ```
+
+`apps/web/app/page.tsx` and `apps/web/components/campaign-workbench.tsx` are pre-T0 scaffolding.
+Replace them.
 
 ## Read-only
 
-Everything else. **Do not "fix" a backend file to make the UI work** — raise it with whoever
+`src/contracts/**` — **frozen**, and your entire interface to the rest of the system. Especially
+`contracts/api.ts`, which defines the SSE event union you render from.
+
+Everything else. **Do not "fix" a backend file to make a screen work** — raise it with whoever
 owns that path.
 
-## Deliverables
+## Forbidden
 
-1. Swap the mock module for real `fetch` calls and a real `EventSource` against
-   `GET /api/stream/:runId`.
-2. Delete `src/mocks/**`.
-3. Wire the two human gates: **Approve plan** (resumes T6's suspended workflow) and
-   **Approve message** (triggers T7's send).
-4. Loading and empty states on every screen — an empty grid before a run starts should look
-   deliberate, not broken.
-5. Reconnect handling on the SSE stream. A dropped connection mid-demo must recover, not
-   freeze at 40 of 60 rows.
+`apps/web/app/api/**` (T7 owns it) and every `src/` path.
 
 ## Read first
 
-T5's, T6's and T7's handoff notes — especially T7's on the SSE connection and T6's on the
-suspend/resume contract.
+T5's handoff (what a ranked binding looks like), T6's (the suspend/resume contract), T7's (the
+SSE connection and reconnect behaviour), T8's (which row carries the warm-intro badge).
+
+---
+
+## Screens
+
+| Screen | Contents | Priority |
+|---|---|---|
+| **New campaign** | one-box objective → streamed spec → editable form | P0 |
+| **Plan** | motion cards, **declined motions with reasons**, **ranked adapter tables**, dual-currency cost, policy list, **Approve** | **P0 — this is now the hero** |
+| **The Grid** | rows streaming through states, motion column + filter chips, live cost ticker, warm-intro badge | P0 |
+| **Evidence drawer** | Proof Graph per target: signal → source → excerpt → implication, plus `droppedCount` | P0 |
+| **Approval queue** | draft with sentences linked to evidence; approve / edit / reject | P0 |
+| **Campaign list** | name, motions, status, spend (operating USD + commit INR), replies | P1 |
+
+## The Plan screen is the demo
+
+The Grid was the hero when the pitch was execution. The pitch is now **how the decision gets
+made**, so the plan screen carries it. Three things must be unmissable:
+
+**1. Declined motions.** `consumer.ads` declined, with its reason, rendered as prominently as
+the selected ones — not greyed out in a footnote. A system that visibly refuses work it cannot
+justify is more credible than one that always says yes. Same treatment as `not_fit` rows: muted,
+never hidden.
+
+**2. Ranked adapter tables.** Per capability, every candidate with its dimension scores, total,
+and the reason it won or lost — plus the model's `weightsRationale` quoted verbatim above the
+table. Ineligible candidates stay in the table with their reason. Show `profile.productionPath`
+on each row: seeing `sim/market` beat `generated/market` beat `outscraper — Outscraper, Google
+Places` in one ranked table *is* the go-to-prod argument, made visually.
+
+**3. Re-plan.** When `replan_started` arrives mid-run, the plan visibly changes — old binding
+struck through, new one in its place, the trigger reason stated. This is the beat where the
+audience sees the system get told *no* and reason its way around it. Do not let it happen
+silently in a log.
+
+## The Grid
+
+- Row states: `discovered → observed → scored → {not_fit | fit} → contact_found → draft_ready
+  → pending_approval → sent → delivered → engaged`
+- **`not_fit` rows stay visible** with their reason. An agent visibly rejecting leads is more
+  credible than 60 green rows. Muted, not hidden.
+- Sortable by assessment score, so the ranking T6 produced is legible rather than implied.
+- Mixed-motion rows in one table with a motion column — that mix *is* the point.
+- Cost ticker shows **two currencies side by side, never summed**: operating in USD, commit in
+  INR with Indian digit grouping (₹1,50,000).
+- **Warm-intro badge** on rows with a `mentions` edge — clicking it shows the linked creator.
+- Budget warning banner driven by the **structured** `warning` field C2 added. Do not
+  pattern-match the reason string.
+
+## Evidence drawer
+
+Signal list with `source_ref`, `excerpt`, `implication`, `strength`. Show `verified` state and
+surface **"N claims dropped as unverifiable"** — that number is a feature, not an error. Show
+statistical signals (`metric`, `value`, `baseline`) in a distinct treatment from documentary
+ones.
+
+## Streaming and resilience
+
+Real `EventSource` against `GET /api/stream/:runId` from the start. Reconnect handling is not
+polish — a dropped connection mid-demo must recover, not freeze at 40 of 60 rows.
+
+Loading and empty states on every screen. An empty grid before a run starts should look
+deliberate, not broken.
+
+## Both human gates
+
+**Approve plan** resumes T6's suspended workflow. **Approve message** triggers T7's send. Both
+must work end to end; the second one is the *"check your phone"* beat.
+
+## Working before the backend is ready
+
+You depend on four Wave 2 tasks and cannot wait for all of them. Build against the real
+endpoints and let them 404 — then keep a **single fixture module** holding one recorded SSE
+transcript and one recorded plan payload, both parsed through their contract schemas, behind a
+`?replay=1` query flag.
+
+That is not the mock layer we cut. It is one file, it never becomes a second source of truth
+because it parses through the same contracts, and it survives into T10 as the offline demo
+fallback. If it grows past one file or starts shaping component props, you have rebuilt the
+thing we deleted — stop.
 
 ## The one thing that can go wrong
 
-If a screen needs data no endpoint returns, the temptation is a cast or a `?? []`. Don't. Rule
-3 and rule 6 exist for exactly this moment. Either the endpoint is wrong or the contract is —
-find out which, and say so in your handoff.
+If a screen needs data no endpoint returns, the temptation is a cast or a `?? []`. Don't. Rules
+3 and 6 exist for exactly this moment. Either the endpoint is wrong or the contract is — find
+out which, and say so in your handoff.
 
 ## The seven engineering rules
 
-1. One source of truth for types — `src/contracts/`.
-2. Parse at the edge — API responses are already contract-typed; don't re-validate everywhere.
-3. **Zero `as`. Zero `any`.**
+1. One source of truth for types — `src/contracts/`. Never redeclare a props interface a schema
+   already describes.
+2. Parse at the edge — the replay fixture is a parse boundary; API responses are already
+   contract-typed, so don't re-validate everywhere.
+3. **Zero `as`. Zero `any`.** No `as unknown as Props`.
 4. try/catch only in: a `.parallel()`/`.foreach()` step, a live-adapter network call, an API
    route handler. **None are in this task.**
 5. Errors are values inside the pipeline.
@@ -54,16 +134,21 @@ find out which, and say so in your handoff.
 
 ## Done when
 
-- [ ] Every screen runs on real data; `src/mocks/` deleted
-- [ ] Grid streams live from SSE, including reconnect
+- [ ] Every screen runs on real data from real endpoints
+- [ ] Plan screen shows declined motions with reasons, and full ranked adapter tables with losers
+- [ ] A mid-run re-plan visibly updates the plan screen
+- [ ] Grid streams live from SSE, including reconnect, and sorts by score
+- [ ] Budget warning renders from the structured `warning` field, not from parsed prose
 - [ ] Both approval gates work end to end
-- [ ] Cost ticker shows real spend — USD operating, INR commit, separately
+- [ ] Cost ticker shows real spend — USD operating, INR commit, separately, Indian digit grouping
 - [ ] Warm-intro badge appears from real discovered edges
-- [ ] `grep -rn " as \| any" app components` returns nothing
+- [ ] Replay fixture is exactly one file and parses through contract schemas
+- [ ] `grep -rn " as \| any" apps/web/app apps/web/components` returns nothing
 - [ ] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — especially any contract mismatch you found)_
+_(fill in — especially any contract mismatch you found, and what the `?replay=1` path does and
+does not cover, since T10 depends on it as the offline fallback.)_
