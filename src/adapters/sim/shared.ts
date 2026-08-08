@@ -64,6 +64,13 @@ export function personTarget(creator: Creator): TargetCandidate {
         viewToFollowerRatio: creator.viewToFollowerRatio,
         fakeFollowerEstimate: creator.fakeFollowerEstimate,
       },
+      contentTags: creator.contentCategories,
+      audienceGeographies: Object.keys(creator.audience.geography),
+      audienceInterests: Object.keys(creator.audience.interests),
+      engagementRate: creator.engagementRate,
+      fakeFollowerEstimate: creator.fakeFollowerEstimate,
+      brandSafetyFlags: creator.brandSafetyFlags,
+      selection: null,
     },
   };
 }

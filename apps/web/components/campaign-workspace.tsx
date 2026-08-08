@@ -241,10 +241,60 @@ function MotionRationale({ rationale }: Readonly<{ rationale: string }>) {
   return <div className="motion-rationale"><p className="motion-summary">{summary}</p>{criteria.length > 0 && <section className="rubric-breakdown" aria-label="Qualification rubric"><h4>Qualification rubric</h4><div>{criteria.map((criterion) => <article key={criterion.key}><span>{criterion.weight}%</span><div><strong>{criterion.key.replaceAll("_", " ")}</strong><p>{criterion.description}</p></div></article>)}</div>{retentionNote && <p className="rubric-note"><XCircle size={14} />{retentionNote}</p>}</section>}</div>;
 }
 
+const motionLabels: Record<string, string> = {
+  "business.local": "Find local businesses",
+  "business.online": "Find online businesses",
+  creator: "Find relevant creators",
+  "consumer.ads": "Build a customer ad audience",
+  "consumer.email": "Reach existing customers",
+};
+
+const capabilityCopy: Record<string, { title: string; description: string }> = {
+  "geo.query": { title: "Find nearby businesses", description: "Identify businesses in the campaign geography that match the target profile." },
+  "db.query": { title: "Search the business database", description: "Find organizations or creators that match the requested audience." },
+  "web.fetch": { title: "Check their website", description: "Review each candidate's public web presence for useful evidence." },
+  "reviews.fetch": { title: "Read customer reviews", description: "Look for recent customer signals that support or rule out a target." },
+  "people.find": { title: "Find the right contact", description: "Identify a relevant person and an approved way to reach them." },
+  "segment.build": { title: "Build a customer segment", description: "Create an audience from connected first-party customer data." },
+};
+
+function readableMotion(motionId: string) {
+  return motionLabels[motionId] ?? motionId.replaceAll(".", " ");
+}
+
+function readableProvider(adapterId: string, mode: string) {
+  if (mode === "generated") return "Generated market research";
+  if (mode === "sim") return "Local market simulator";
+  return adapterId.replaceAll(".", " ");
+}
+
+function readableDecline(reason: string) {
+  if (reason.includes("no first-party customer data source")) {
+    return "This needs a connected customer data source. Connect one before this route can run.";
+  }
+  return reason;
+}
+
+function ProviderChoice({ binding }: Readonly<{ binding: PlanData["motions"][number]["bindings"][number] }>) {
+  const copy = capabilityCopy[binding.capabilityId] ?? { title: binding.capabilityId, description: "Prepare this campaign capability." };
+  const selected = binding.candidates.find((candidate) => candidate.adapterId === binding.chosen.adapterId) ?? binding.candidates[0];
+  return <section className="capability-choice">
+    <div className="capability-choice__heading">
+      <div><span>Next step</span><h4>{copy.title}</h4><p>{copy.description}</p></div>
+      <div className="source-choice"><span>Using</span><strong>{readableProvider(binding.chosen.adapterId, binding.chosen.mode)}</strong><p>{selected?.eligible ? "Available for this campaign" : "Selected source"}</p></div>
+    </div>
+    <details className="provider-details">
+      <summary>Show source-selection details</summary>
+      <p className="provider-details__context">{binding.weightsRationale}</p>
+      <ul>{binding.candidates.map((candidate) => <li key={candidate.adapterId}><strong>{readableProvider(candidate.adapterId, candidate.mode)}</strong><span>{candidate.adapterId === binding.chosen.adapterId ? "Selected" : candidate.eligible ? "Available, not selected" : "Unavailable"}</span><p>{candidate.reason}</p></li>)}</ul>
+    </details>
+  </section>;
+}
+
 function PlanView({ plan, replan, approvals, replay, campaignId, onApproved }: Readonly<{ plan: PlanData | null; replan: Projection["replan"]; approvals: Approval[]; replay: boolean; campaignId: string; onApproved: (approvalId: string) => void }>) {
   if (plan === null) return <div className="empty-workspace"><RefreshCw size={28} /><h2>The plan is taking shape</h2><p>Motion selection and provider ranking will appear here when the planner publishes them.</p></div>;
   const planApproval = approvals.find((approval) => approval.messageId === null);
-  return <div className="plan-layout"><div className="plan-main"><section className="plan-intro"><span className="product-kicker">Decision route</span><h2>Why this campaign will run this way</h2><p>Every selected motion, rejected route, provider score, policy, and cost is visible before execution.</p><div className="dual-budget"><div><CircleDollarSign size={18} /><span>Operating ceiling</span><strong>{formatUsd(plan.budget.operating.amountMinor)}</strong></div><div><span className="rupee-mark">₹</span><span>Commit ceiling</span><strong>{formatInr(plan.budget.commit.amountMinor)}</strong></div></div></section>{replan && <div className="replan-card"><RefreshCw size={19} /><div><span>Route amended · {replan.trigger.replace("_", " ")}</span><strong><s>outscraper</s> <ArrowRight size={15} /> market.geo</strong><p>{replan.reason}</p></div></div>}<div className="motion-plan-list">{plan.motions.map((motion) => <article className="motion-plan" key={motion.motionId}><header><div><span className="selected-marker"><Check size={13} /> Selected motion</span><h3>{motion.motionId}</h3><MotionRationale rationale={motion.rationale} /></div><div className="motion-budget"><span>{formatUsd(motion.operatingBudgetCents)}</span><span>{formatInr(motion.commitBudgetCents)}</span></div></header>{motion.bindings.map((binding) => <div className="ranking-block" key={binding.capabilityId}><div className="ranking-heading"><div><span>Capability</span><h4>{binding.capabilityId}</h4></div><div className="ranking-rationale"><span>Provider priorities</span><p>{binding.weightsRationale}</p></div></div><div className="ranking-table-wrap"><table className="ranking-table"><thead><tr><th>Provider</th><th>Mode</th><th>Cost</th><th>Fresh</th><th>Confidence</th><th>Coverage</th><th>Total</th><th>Decision</th></tr></thead><tbody>{binding.candidates.map((candidate) => <tr className={!candidate.eligible ? "is-ineligible" : candidate.adapterId === binding.chosen.adapterId ? "is-winner" : ""} key={candidate.adapterId}><td><strong>{candidate.adapterId}</strong><small>{candidate.reason}</small></td><td>{candidate.mode}</td><td>{Math.round(candidate.dimensionScores.cost * 100)}</td><td>{Math.round(candidate.dimensionScores.freshness * 100)}</td><td>{Math.round(candidate.dimensionScores.confidence * 100)}</td><td>{Math.round(candidate.dimensionScores.coverage * 100)}</td><td><strong>{candidate.totalScore.toFixed(3)}</strong></td><td>{candidate.adapterId === binding.chosen.adapterId ? <span className="winner-label"><CheckCircle2 size={14} /> Chosen</span> : candidate.eligible ? "Eligible" : <span className="declined-label"><XCircle size={14} /> Ineligible</span>}</td></tr>)}</tbody></table></div></div>)}</article>)}</div><section className="declined-section"><div className="section-line-heading"><div><span className="product-kicker">Deliberate restraint</span><h2>Routes we declined</h2></div><p>Rejected motions remain visible because a credible system can explain what it chose not to do.</p></div>{plan.declinedMotions.map((motion) => <article key={motion.motionId}><XCircle size={19} /><div><strong>{motion.motionId}</strong><p>{motion.reason}</p></div></article>)}</section></div><aside className="plan-side"><section><span className="product-kicker">Policies</span><h3>Guardrails on this route</h3>{plan.policies.map((policy) => <div className="policy-item" key={policy.kind}><ShieldCheck size={17} /><div><strong>{policy.kind.replace("_", " ")}</strong><p>{policy.description}</p></div></div>)}</section>{planApproval && <section className="approval-callout"><span>Needs your decision</span><h3>Approve this route to begin execution</h3><p>{planApproval.reason}</p><ApprovalButtons approval={planApproval} campaignId={campaignId} replay={replay} onDecided={onApproved} /></section>}</aside></div>;
+  return <div className="plan-layout"><div className="plan-main"><section className="plan-intro"><span className="product-kicker">Campaign plan</span><h2>What MotionGrid will do next</h2><p>This is the route ready to run. Source-selection details remain available when you need to audit a decision.</p><div className="dual-budget"><div><CircleDollarSign size={18} /><span>Operating ceiling</span><strong>{formatUsd(plan.budget.operating.amountMinor)}</strong></div><div><span className="rupee-mark">₹</span><span>Commit ceiling</span><strong>{formatInr(plan.budget.commit.amountMinor)}</strong></div></div></section>{replan && <div className="replan-card"><RefreshCw size={19} /><div><span>Route amended · {replan.trigger.replace("_", " ")}</span><strong><s>outscraper</s> <ArrowRight size={15} /> market.geo</strong><p>{replan.reason}</p></div></div>}<div className="motion-plan-list">{plan.motions.map((motion) => <article className="motion-plan" key={motion.motionId}><header><div><span className="selected-marker"><Check size={13} /> Ready to run</span><h3>{readableMotion(motion.motionId)}</h3><MotionRationale rationale={motion.rationale} /></div><div className="motion-budget"><span>{formatUsd(motion.operatingBudgetCents)}</span><span>{formatInr(motion.commitBudgetCents)}</span></div></header>{motion.bindings.map((binding) => <ProviderChoice binding={binding} key={binding.capabilityId} />)}</article>)}</div><section className="declined-section"><div className="section-line-heading"><div><span className="product-kicker">Not ready yet</span><h2>Routes that need something first</h2></div><p>These are not failures. They are waiting on a missing source or capability.</p></div>{plan.declinedMotions.map((motion) => <article key={motion.motionId}><XCircle size={19} /><div><strong>{readableMotion(motion.motionId)}</strong><p>{readableDecline(motion.reason)}</p></div></article>)}</section></div><aside className="plan-side"><section><span className="product-kicker">Policies</span><h3>Guardrails on this route</h3>{plan.policies.map((policy) => <div className="policy-item" key={policy.kind}><ShieldCheck size={17} /><div><strong>{policy.kind.replace("_", " ")}</strong><p>{policy.description}</p></div></div>)}</section>{planApproval && <section className="approval-callout"><span>Needs your decision</span><h3>Approve this route to begin execution</h3><p>{planApproval.reason}</p><ApprovalButtons approval={planApproval} campaignId={campaignId} replay={replay} onDecided={onApproved} /></section>}</aside></div>;
 }
 
 function GridView({ projection, selectedTargetId, onSelect }: Readonly<{ projection: Projection; selectedTargetId: string | null; onSelect: (targetId: string) => void }>) {

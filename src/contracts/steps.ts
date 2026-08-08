@@ -22,6 +22,7 @@ import {
   ConfidenceSchema,
   DocumentaryEvidencePayloadSchema,
   NonnegativeCentsSchema,
+  PersonTargetPayloadSchema,
   StatisticalEvidencePayloadSchema,
 } from "./payloads";
 
@@ -165,6 +166,29 @@ export const PlanInputSchema = z.object({
   connectedSources: z.array(WorkspaceSourceSchema),
 });
 export const PlanOutputSchema = StepResult(PlanDataSchema);
+
+export const CreatorShortlistCandidateSchema = z.object({
+  externalRef: z.string().min(1),
+  name: z.string().min(1),
+  payload: PersonTargetPayloadSchema,
+});
+export const CreatorShortlistInputSchema = z.object({
+  spec: CampaignSpecSchema,
+  candidates: z.array(CreatorShortlistCandidateSchema).min(1).max(100),
+});
+export const CreatorShortlistDataSchema = z.object({
+  selected: z
+    .array(
+      z.object({
+        externalRef: z.string().min(1),
+        relevanceScore: ConfidenceSchema,
+        reason: z.string().min(1),
+      }),
+    )
+    .min(1)
+    .max(10),
+});
+export const CreatorShortlistOutputSchema = StepResult(CreatorShortlistDataSchema);
 
 export const DiscoverInputSchema = z.object({
   campaignId: IdSchema,

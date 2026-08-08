@@ -11,6 +11,7 @@ import type {
 } from "../../contracts/entities";
 import {
   AssessDataSchema,
+  CreatorShortlistDataSchema,
   type CampaignSpecSchema,
   DraftDataSchema,
   ExtractEvidenceDataSchema,
@@ -69,6 +70,9 @@ export interface OrganizationAgents {
   readonly extract: StructuredAgent<ExtractEvidenceData>;
   readonly assess: StructuredAgent<AssessData>;
   readonly draft: StructuredAgent<DraftData>;
+  readonly selectCreators: StructuredAgent<
+    z.output<typeof CreatorShortlistDataSchema>
+  >;
 }
 
 export interface OrganizationAdapters {

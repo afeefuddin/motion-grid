@@ -31,6 +31,7 @@ import {
 import { synthesizeStep } from "../../synthesis";
 import {
   assessor,
+  creatorSelector,
   drafter,
   evidenceExtractor,
   runObjectiveCompiler,
@@ -221,6 +222,7 @@ export function createDefaultWorkflowServices(
           extract: evidenceExtractor,
           assess: assessor,
           draft: drafter,
+          selectCreators: creatorSelector,
         },
         adapters: {
           geo: [geoSimAdapter, generatedMarketGeoAdapter],
