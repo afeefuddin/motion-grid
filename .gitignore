@@ -10,3 +10,4 @@ dist
 *.db-journal
 coverage
 .DS_Store
+.vercel
