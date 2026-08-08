@@ -1,4 +1,7 @@
-import { TwilioWhatsAppAdapter, TwilioWhatsAppError } from "@motiongrid/integrations";
+import {
+  TwilioWhatsAppAdapter,
+  TwilioWhatsAppError,
+} from "../../../../../../../src/adapters/live";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 

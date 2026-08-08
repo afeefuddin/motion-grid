@@ -19,7 +19,7 @@ src/ledger/**
 
 ## Forbidden
 
-`src/adapters/**` (T2/T7), `src/mastra/**` (T4/T6), `src/db/repositories/**` (T1), `app/`.
+`src/adapters/**` (T2/T7), `src/mastra/**` (T4/T6), `src/db/repositories/**` (T1), `apps/web/app/`.
 
 You define the **adapter interface**; T2 and T7 implement against it. Coordinate through the
 contract, not by editing their files.

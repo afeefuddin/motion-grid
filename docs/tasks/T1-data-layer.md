@@ -20,7 +20,7 @@ src/db/client.ts
 
 ## Forbidden
 
-`src/adapters/`, `src/mastra/`, `app/`, `src/policy/`, `src/ledger/`.
+`src/adapters/`, `src/mastra/`, `apps/web/app/`, `src/policy/`, `src/ledger/`.
 
 ## Deliverables
 

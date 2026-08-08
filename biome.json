@@ -1,5 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.2.7/schema.json",
+  "files": {
+    "includes": ["**", "!**/.next"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -16,5 +19,30 @@
       "quoteStyle": "double",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "apps/web/**",
+        "src/adapters/live/**",
+        "src/sim/fixtures/**"
+      ],
+      "formatter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["apps/web/app/page.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useUniqueElementIds": "off"
+          }
+        }
+      }
+    }
+  ]
 }

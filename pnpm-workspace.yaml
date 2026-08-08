@@ -1,6 +1,5 @@
 packages:
   - apps/*
-  - packages/*
 
 linkWorkspacePackages: true
 
@@ -11,6 +10,3 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@types/node@26.2.0'
   - lucide-react@1.30.0
-  - '@ai-sdk/openai@4.0.36'
-  - '@ai-sdk/provider-utils@5.0.25'
-  - '@ai-sdk/provider@4.0.7'

@@ -1,6 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, CheckCircle2, Route, ShieldCheck, Waypoints } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
-import { CampaignWorkbench } from "@/components/campaign-workbench";
 
 const principles = [
   {
@@ -48,8 +47,6 @@ export default function Home() {
           <a href="#workbench">Start with an objective <ArrowDownRight size={18} /></a>
         </div>
       </section>
-
-      <CampaignWorkbench />
 
       <section className="system-section" id="system">
         <div className="section-intro">

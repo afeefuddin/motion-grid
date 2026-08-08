@@ -1,4 +1,4 @@
-import { validateTwilioWebhook } from "@motiongrid/integrations";
+import { validateTwilioWebhook } from "../../../src/adapters/live";
 
 function externallyVisibleUrl(requestUrl: string) {
   const incomingUrl = new URL(requestUrl);

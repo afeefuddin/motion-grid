@@ -9,7 +9,7 @@ this task at all.
 ## Owned paths (exclusive write)
 
 ```
-package.json · tsconfig.json · next.config.ts · biome.json · .gitignore · .env.example
+package.json · tsconfig.json · apps/web/next.config.ts · biome.json · .gitignore · .env.example
 docker-compose.yml
 drizzle.config.ts
 src/contracts/**
@@ -19,7 +19,7 @@ src/mastra/index.ts          (stub only — T6 takes ownership later)
 
 ## Forbidden
 
-Everything else. Do not create `src/adapters/`, `src/motions/`, `app/` screens, or any
+Everything else. Do not create `src/adapters/`, `src/motions/`, `apps/web/app/` screens, or any
 repository. Other agents own those and will collide with you.
 
 ## Stack

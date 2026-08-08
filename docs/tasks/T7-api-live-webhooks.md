@@ -69,6 +69,10 @@ objective calls for real data, and avoid them when it doesn't.
 
 ### 1. Route handlers — `apps/web/app/api/**`
 
+**`POST /api/campaigns` does not exist any more.** C1 deleted the pre-T0 version: it called a
+`plan-campaign` workflow in the deleted `apps/agent-runtime` and parsed against a `CampaignPlan`
+shape that no longer exists. You are writing it fresh against T6's `campaignWorkflow`.
+
 ```
 POST   /api/campaigns                  create → compile objective (streams)
 GET    /api/campaigns                  list

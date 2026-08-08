@@ -1,4 +1,7 @@
-import { ResendEmailAdapter, ResendEmailError } from "@motiongrid/integrations";
+import {
+  ResendEmailAdapter,
+  ResendEmailError,
+} from "../../../../../../../src/adapters/live";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 

@@ -1,3 +1,6 @@
+Product context and long-term intent. **`docs/PLAN.md` is authoritative for what is being
+built.** Where they disagree, PLAN.md wins.
+
 # MotionGrid
 
 > One goal. The right agents. Every GTM motion.

@@ -6,8 +6,9 @@
     "dev": "pnpm --dir apps/web dev",
     "build": "pnpm typecheck && pnpm --dir apps/web build",
     "typecheck": "tsc --noEmit",
-    "check": "biome check package.json tsconfig.json next.config.ts biome.json drizzle.config.ts src/contracts src/db/schema.ts src/mastra/index.ts src/sim/*.ts src/adapters/sim",
-    "check:write": "biome check --write package.json tsconfig.json next.config.ts biome.json drizzle.config.ts src/contracts src/db/schema.ts src/mastra/index.ts src/sim/*.ts src/adapters/sim",
+    "check": "biome check package.json tsconfig.json biome.json drizzle.config.ts src apps/web",
+    "check:write": "biome check --write package.json tsconfig.json biome.json drizzle.config.ts src apps/web",
+    "test": "if [ -n \"$DATABASE_URL\" ]; then node --import tsx --test $(find src -name '*.test.ts'); else printf '%s\\n' '# SKIP repository tests: DATABASE_URL is unset'; node --import tsx --test $(find src -name '*.test.ts' ! -path 'src/db/repositories/repositories.test.ts'); fi",
     "contracts:smoke": "tsx src/contracts/smoke.ts",
     "sim:generate": "tsx src/sim/generate.ts",
     "sim:test": "tsx src/adapters/sim/adapters.test.ts",
@@ -32,6 +33,8 @@
     "postgres": "3.4.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "resend": "^6.18.1",
+    "twilio": "^6.0.2",
     "zod": "4.4.3"
   },
   "devDependencies": {

@@ -20,8 +20,12 @@ whole reason this task exists.
 packages/**                                          (three deleted, one relocated — see §1–2)
 apps/agent-runtime/**                                (deleting)
 src/adapters/live/**                                 (creating — pure file move only)
+apps/web/app/api/campaigns/route.ts                  (deleting — see §5)
+apps/web/components/campaign-workbench.tsx           (deleting — see §5)
+apps/web/app/page.tsx                                (two lines only — see §5)
 apps/web/app/api/messages/** · apps/web/lib/twilio-webhook.ts
                                                      (import paths only, zero logic change)
+apps/web/package.json · apps/web/next.config.ts
 package.json · tsconfig.json · tsconfig.base.json · pnpm-workspace.yaml
 next.config.ts · biome.json · .gitignore · README.md
 plan.md → docs/PRODUCT.md                            (moving)
@@ -36,6 +40,10 @@ are making, and it is the only one.
 
 Changing the **behaviour** of any delivery code. §2 is a file move and an import-path rewrite.
 Not a refactor, not a cleanup, not a "while I'm here". See §2's proof requirement.
+
+**Migrating anything to the current contracts.** Where a pre-T0 file can't survive a mechanical
+import rewrite, it is deleted and its owning task rebuilds it (§5). If you find a third such
+file that §5 doesn't name, stop and raise it rather than porting it yourself.
 
 ---
 
@@ -94,7 +102,7 @@ Confirm before you commit:
 
 ```
 grep -rn "CapabilityEstimate\|CapabilityAdapter\|LocalBusinessResult\|@motiongrid/" \
-  --exclude-dir=node_modules --exclude-dir=.git .
+  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next .
 ```
 
 Only `apps/web`'s own package name should remain. If anything imports the three deleted
@@ -119,17 +127,40 @@ apps/web/app/api/webhooks/twilio/whatsapp/route.ts  inbound WhatsApp
 apps/web/app/api/webhooks/twilio/status/route.ts    delivery status
 apps/web/lib/mastra-client.ts
 .env.example                                        Twilio + Resend config
-README.md                                           §9 updates the workspace list only
+README.md                                           §10 updates the workspace list only
 ```
 
 T7 owns wrapping all of it behind the `message.send` capability contract so sends run through
 `executeCapability` and the policy gate. That is a design change with a working demo depending
 on it, and it is not this task.
 
-`apps/web/app/api/campaigns/route.ts`, `app/page.tsx` and `components/campaign-workbench.tsx`
-are pre-T0 UI scaffolding. Leave them; T9 replaces them.
+## 5. Delete the pre-T0 campaign scaffolding
 
-## 5. Single Next app at `apps/web`
+Two files depend on `@motiongrid/domain`'s incompatible `CampaignPlan` shape and **cannot be
+fixed by an import rewrite**. Delete them rather than migrating them:
+
+| File | Why it goes |
+|---|---|
+| `apps/web/app/api/campaigns/route.ts` | Calls `mastraClient.getWorkflow("plan-campaign")` — a workflow in `apps/agent-runtime`, which §3 deletes. There is nothing left to migrate it *to*: T6 hasn't built `campaignWorkflow` yet, and **T7 owns `POST /api/campaigns` as an explicit deliverable** |
+| `apps/web/components/campaign-workbench.tsx` | This *is* T9's P0 new-campaign screen — "one-box objective → streamed spec → editable form". **T9 owns it** |
+
+Migrating either would mean designing against contracts two unstarted tasks will define. That is
+not mechanical work, and this task is mechanical by construction. Disabling them instead of
+deleting leaves dead code, which is the disease this task exists to cure.
+
+**Keep the design system.** `apps/web/app/page.tsx`, `apps/web/app/layout.tsx`,
+`apps/web/app/globals.css` (862 lines) and `apps/web/components/brand-mark.tsx` import nothing
+from `@motiongrid/*`. T9 wants that styling and
+`pnpm dev` should still render. In `page.tsx`, delete exactly two lines — the
+`CampaignWorkbench` import and the `<CampaignWorkbench />` element. Nothing else.
+
+Then the mechanical remainder:
+
+- `apps/web/next.config.ts` — drop `transpilePackages` entirely. After §2 no workspace package
+  remains to transpile.
+- `apps/web/package.json` — drop both `@motiongrid/domain` and `@motiongrid/integrations`.
+
+## 6. Single Next app at `apps/web`
 
 `apps/web` stays the Next application. Delete the duplicate root `next.config.ts` (the real one
 is `apps/web/next.config.ts`). Root `package.json` already delegates via
@@ -140,7 +171,7 @@ the code match: sweep for any remaining `app/**` or `components/**` reference in
 that still assumes the root layout, and correct it. **Do not edit `docs/tasks/T4-*.md` — an
 agent is working in it.**
 
-## 6. Make `pnpm typecheck` cover the whole repo
+## 7. Make `pnpm typecheck` cover the whole repo
 
 Today root `tsconfig.json` includes only `next-env.d.ts`, `src/**/*.ts`, `drizzle.config.ts`,
 `next.config.ts`. `apps/web` is invisible to it — which is exactly why three contradictory type
@@ -151,7 +182,7 @@ adapters) and `apps/web/**` — either by widening the include or by project ref
 is less machinery. Verify by introducing a deliberate type error in each and confirming the root
 command fails on both.
 
-## 7. `pnpm test`
+## 8. `pnpm test`
 
 `docs/PLAN.md`'s verification section promises `pnpm test`; it doesn't exist. Tests are
 currently reached through ad-hoc scripts (`sim:test`) or not at all — `repositories.test.ts` is
@@ -160,7 +191,7 @@ in no script and silently needs a live Postgres.
 Add a single `pnpm test` that runs every `src/**/*.test.ts` under `node --test`. The repository
 suite must **skip with a printed reason** when `DATABASE_URL` is unset, not fail and not hang.
 
-## 8. Fix the stale Biome target list
+## 9. Fix the stale Biome target list
 
 `pnpm check` hand-lists paths and has fallen behind — it misses `src/db/repositories`,
 `src/capabilities`, `src/policy`, `src/ledger`, `src/contracts/smoke.ts`. Replace the list with
@@ -170,7 +201,7 @@ Biome will now see the relocated live adapters for the first time. If it reports
 diffs on them, apply the formatter — that is not a logic change. If it reports a *lint* error,
 leave it and record it alongside the two known violations from §2.
 
-## 9. Two plans, one authority
+## 10. Two plans, one authority
 
 Root `plan.md` is the original product document. It describes a **different architecture** from
 the one being built — an orchestrator calling `plan_b2b_campaign(...)` as a tool and a
@@ -183,7 +214,7 @@ Move `plan.md` → `docs/PRODUCT.md` and add a two-line header:
 
 Do not rewrite its contents.
 
-## 10. Small hygiene
+## 11. Small hygiene
 
 - Update `README.md`'s workspace list. It currently advertises `apps/agent-runtime`,
   `packages/domain`, `packages/database`, `packages/integrations` and `packages/policy` — four
@@ -197,26 +228,34 @@ Do not rewrite its contents.
 
 ## Done when
 
-- [ ] `packages/**` and `apps/agent-runtime/**` are gone; `pnpm-workspace.yaml` is `apps/*` only
-- [ ] **`git diff --find-renames` shows the two provider files as renames with zero content
+- [x] `packages/**` and `apps/agent-runtime/**` are gone; `pnpm-workspace.yaml` is `apps/*` only
+- [x] **`git diff --find-renames` shows the two provider files as renames with zero content
       change** — this is the one check that matters most in this task
-- [ ] `twilio` and `resend` hoisted to root `package.json` at unchanged versions
-- [ ] `pnpm install` succeeds with no unresolved workspace dependency
-- [ ] The WhatsApp send route, email send route and both webhooks compile and their allowlist
+- [x] `twilio` and `resend` hoisted to root `package.json` at unchanged versions
+- [x] `pnpm install` succeeds with no unresolved workspace dependency
+- [x] The WhatsApp send route, email send route and both webhooks compile and their allowlist
       logic is unchanged
-- [ ] `pnpm typecheck` at the root covers `apps/web` — proven by a deliberate error
-- [ ] `pnpm test` runs every suite; the DB suite skips with a reason when `DATABASE_URL` is unset
-- [ ] `pnpm check` covers `src` and `apps/web` by directory, not by hand-listed path
-- [ ] `grep -rn "@motiongrid/" --exclude-dir=node_modules .` returns nothing outside `apps/web`'s
-      own package name
-- [ ] `plan.md` moved to `docs/PRODUCT.md` with the authority header
-- [ ] `README.md` workspace list matches reality; its Twilio/Resend setup section is untouched
-- [ ] Any remaining root-layout `app/**` reference in docs or config corrected — **T4 untouched**
-- [ ] Handoff note written
+- [x] `apps/web/app/api/campaigns/route.ts` and
+      `apps/web/components/campaign-workbench.tsx` deleted — **not
+      migrated, not commented out**
+- [x] `page.tsx` renders; `globals.css`, `layout.tsx` and `brand-mark.tsx` are untouched
+- [x] `transpilePackages` gone from `apps/web/next.config.ts`; both `@motiongrid/*` deps gone
+      from `apps/web/package.json`
+- [x] `pnpm typecheck` at the root covers `apps/web` — proven by a deliberate error
+- [x] `pnpm test` runs every suite; the DB suite skips with a reason when `DATABASE_URL` is unset
+- [x] `pnpm check` covers `src` and `apps/web` by directory, not by hand-listed path
+- [x] `grep -rn "@motiongrid/" --exclude-dir=node_modules --exclude-dir=.next .` returns nothing
+      outside `apps/web`'s own package name (`.next/` holds stale build output — ignore it)
+- [x] `plan.md` moved to `docs/PRODUCT.md` with the authority header
+- [x] `README.md` workspace list matches reality; its Twilio/Resend setup section is untouched
+- [x] Any remaining root-layout `app/**` reference in docs or config corrected — **T4 untouched**
+- [x] Handoff note written
 
 ---
 
 ## Handoff note
 
-_(fill in — especially: the new import path for the live adapters, and the two rule violations
-from §2 with their line numbers, so T7 fixes them while it has a working send in front of it.)_
+Live adapters now export from `src/adapters/live/index.ts`; web importers use relative paths to
+that entry point. T7 must fix the caught-error cast in `src/adapters/live/twilio-whatsapp.ts:78`
+and the non-null assertion in `src/adapters/live/resend-email.ts:62` while refactoring delivery
+behind the `message.send` contract.

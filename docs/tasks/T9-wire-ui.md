@@ -13,8 +13,15 @@ apps/web/app/**          (everything EXCEPT apps/web/app/api/**)
 apps/web/components/**
 ```
 
-`apps/web/app/page.tsx` and `apps/web/components/campaign-workbench.tsx` are pre-T0 scaffolding.
-Replace them.
+**C1 already deleted `apps/web/components/campaign-workbench.tsx`** — it was the pre-T0 new-campaign
+screen, built against a `CampaignPlan` shape that no longer exists. You are building that screen
+from scratch, not porting it.
+
+What C1 kept for you: `apps/web/app/globals.css` (862 lines of real design system),
+`apps/web/app/layout.tsx`, `apps/web/components/brand-mark.tsx`, and `apps/web/app/page.tsx`
+minus its workbench mount. The fonts are already
+in `package.json` (Manrope, Newsreader, IBM Plex Mono). Use that styling — it is good, and
+rebuilding a visual language is not what these four hours are for.
 
 ## Read-only
 

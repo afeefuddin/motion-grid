@@ -18,7 +18,7 @@ src/adapters/sim/**           the six adapters
 
 ## Forbidden
 
-`src/adapters/live/` (T7 owns it), `src/db/`, `src/mastra/`, `app/`.
+`src/adapters/live/` (T7 owns it), `src/db/`, `src/mastra/`, `apps/web/app/`.
 
 ## The one hard rule
 
