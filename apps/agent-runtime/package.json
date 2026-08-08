@@ -1,0 +1,23 @@
+{
+  "name": "@motiongrid/agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "mastra dev",
+    "build": "mastra build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "4.0.36",
+    "@mastra/core": "1.57.0",
+    "@mastra/libsql": "1.19.0",
+    "@motiongrid/domain": "0.1.0",
+    "@motiongrid/policy": "0.1.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "mastra": "1.23.0",
+    "typescript": "7.0.2"
+  }
+}
