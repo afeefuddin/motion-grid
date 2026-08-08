@@ -1,99 +1,122 @@
-# MotionGrid — Agentic GTM OS
+# MotionGrid — Agentic GTM OS · Parallel Build Plan
 
 ## Context
 
-`/Users/ranger/projects/motion-grid` is an empty git repo. MotionGrid turns a business
-objective into an auditable, executable, multi-motion campaign. One orchestrator, one entity
-graph, one adapter layer, N motions.
+`/Users/ranger/projects/motion-grid` contains only `docs/PLAN.md`. This revision restructures
+the build for **parallel execution by 4–6 agents over 1–2 days** on a new stack:
+**Next.js + Mastra + Postgres**.
 
-**Target: a hackathon demo built in 1–2 days.** Constraints agreed:
+Two constraints drive the structure:
 
-- **No production data APIs.** Discovery and enrichment run against a synthetic market we
-  generate and commit as fixtures. The demo is about the agentic layer, not vendor plumbing.
-- **Outbound delivery is real.** The agent sends actual WhatsApp and email to seeded demo
-  contacts during the pitch, and handles the reply.
-- **One motion executes end-to-end; all motions plan.** Business/local runs the full pipeline
-  to a live send. Creator produces a costed roster. Consumer produces an ad plan.
+1. **Contracts before code.** Every module boundary is a Zod schema defined once, up front,
+   in `src/contracts/`. Agents code against known input and output types, so there is no
+   defensive casting and no speculative error handling. This is also exactly how Mastra
+   works — every `createStep` declares `inputSchema` / `outputSchema` — so the contract layer
+   and the workflow layer are the same layer.
+2. **No two agents write the same file.** Ownership is assigned per directory below.
 
-The line we hold and say out loud: **we simulate the market, not the agent.** Every signal,
-score, allocation and message comes from real model reasoning over the synthetic corpus.
-Nothing is pre-baked.
+### Decisions taken
+
+| Decision | Choice | Consequence |
+|---|---|---|
+| Stack | Next.js App Router + Mastra v1 + Postgres | Heavier setup than Bun/SQLite; scope trimmed accordingly |
+| LLM access | **Pure Mastra** model router | Anthropic-specific features (citations, task budgets, advisor tool, fast mode, mid-conversation tool changes, programmatic tool calling) are **out** — see *Evidence verification* below for the substitute |
+| Postgres | Self-hosted; Apple container locally | One shared DB, **one migration owner** (T0) |
+| Timeline | 1–2 days, 4–6 parallel agents | Creator/Consumer are plan-only; allocation is deterministic, not agentic |
 
 ---
 
-## Product thesis
+## Product thesis (unchanged)
 
-Clay is enrichment plumbing. Unify is signal→outbound. 11x is an autonomous SDR. All three
-optimize for *more personalized volume*, and the market has already priced that in:
-AI-drafted first-touch reply rates fell from 3–5% in 2024 to **under 1% by mid-2026**, with
-buying committees block-listing known AI-SDR signatures.
+AI-drafted first-touch reply rates fell from 3–5% in 2024 to **under 1% by mid-2026**. The
+problem isn't the writing — it's that there's no reason to reply.
 
-Two things make MotionGrid different, and both are demonstrable in four minutes:
+**Evidence, not personalization tokens.** Every outreach sentence traces to a source excerpt
+that is *validated against the source document before it is persisted*.
 
-**1. Evidence, not personalization tokens.** Every outreach sentence traces to a cited
-artifact — a verbatim review quote, a missing booking link, a stale copyright year. We
-enforce this with the Claude citations API rather than a prompt instruction, so the model
-*cannot* invent a quote. Local B2B is the right beachhead precisely because its buying
-signals are publicly observable and provable.
+**One graph, many motions.** A single objective fans out to creator, business, and consumer
+motions sharing an entity graph — so a creator who already posted about a target business
+becomes a warm intro path. Structurally impossible in a single-motion tool.
 
-**2. One graph, many motions.** A single objective fans out to creator, business, and
-consumer motions that share an entity graph — so a creator who already posted about a
-target business becomes a warm intro path. That cross-motion edge is structurally impossible
-in a single-motion tool, and it is the answer to "why a platform instead of three tools."
+### Evidence verification — the substitute for citations
+
+Pure Mastra means we can't use Anthropic's citations API, so excerpts are model-transcribed.
+We recover most of the guarantee deterministically and at zero API cost:
+
+```
+1. agent.generate(documents, { structuredOutput: { schema: SignalArraySchema } })
+2. for each returned signal:
+     normalize = s => s.toLowerCase().replace(/\s+/g, ' ').trim()
+     verified  = normalize(sourceDoc).includes(normalize(signal.excerpt))
+3. persist verified signals; drop the rest; record droppedCount on the assessment
+```
+
+Fuzzy enough to survive reformatting, strict enough to catch invention. The claim becomes
+*"every excerpt is validated against its source before it's persisted — an invented quote is
+dropped, and we show you the count."* Surfacing `droppedCount` in the UI is more honest than
+the citations version and costs ~20 lines.
 
 ---
 
 ## Scope
 
-| | Ships in the demo |
+| | In |
 |---|---|
 | **Executes fully** | `business.local` — discover → evidence → qualify → contact → draft → **live send** → reply |
-| **Plans + allocates** | `creator` — discovers from a seeded index, scores, proposes a roster under budget |
-| **Plans only** | `consumer.ads` — builds a segment and an ad plan with cost estimate |
-| **Cross-motion** | Shared budget split, shared graph, discovered edges between creator and business targets |
-| **Out of scope** | Real discovery APIs, Google Ads execution, CRM sync, multi-tenancy, auth |
+| **Plans + allocates** | `creator` — seeded index, scored, deterministic roster under budget |
+| **Plans only** | `consumer.ads` — segment + ad plan with cost estimate |
+| **Cross-motion** | Shared budget split, shared graph, discovered `mentions` edges → warm-intro badge |
+| **Cut for time** | Ledger screen, separate roster screen, replay, follow-up waves, `business.online` and `consumer.email` execution, auth, multi-tenancy |
+
+---
+
+## Engineering rules — every agent follows these
+
+1. **One source of truth for types.** `src/contracts/` holds every Zod schema. Entity schemas
+   are derived from the Drizzle schema with `drizzle-zod`, never hand-duplicated. Import
+   inferred types (`z.infer<typeof X>`); never redeclare an interface that a schema already
+   describes.
+2. **Parse at the edge, trust inside.** Validate exactly three places: HTTP request bodies,
+   LLM structured output, and fixture loads. Everywhere downstream, the type is known.
+3. **Zero `as` casts. Zero `any`.** `unknown` appears only at a parse boundary. If you reach
+   for a cast, the contract is wrong — fix the contract, and say so in your handoff note.
+4. **try/catch in exactly three places:** inside a step running under `.parallel()` or
+   `.foreach()` (Mastra collapses the whole block on an uncaught throw), at the network
+   boundary in a live adapter, and in an API route handler. Nowhere else.
+5. **Errors are values inside the pipeline.** Steps return
+   `{ ok: true, data } | { ok: false, reason }`. Downstream steps filter on `ok`. No
+   exceptions as control flow.
+6. **No defensive optional chaining.** If a field can be absent, the schema says
+   `.optional()`. If the schema says it's there, it's there.
+7. **Adapters are pure w.r.t. their contract.** Given the same input they return the same
+   typed output. No hidden I/O, no global state.
 
 ---
 
 ## Object model
 
-`campaign` is the aggregate root. Everything hangs off it and persists across runs.
+`campaign` is the aggregate root and persists across runs.
 
 ```
-workspace                         seller identity, ICP, proof points, sender profiles
-  └── campaign                    durable · named · budgeted · pausable · resumable
-        ├── objective             the NL ask (revisable → new plan version)
-        ├── plan[]                versioned; v1 approved, v2 after re-plan
+workspace
+  └── campaign                    durable · named · budgeted · pausable
+        ├── objective             NL ask + compiled CampaignSpec
+        ├── plan[]                versioned
         ├── motion_allocation[]   per-motion budget slice + dependsOn[]
-        ├── run[]                 waves: discovery · outreach · follow_up · replan
-        ├── target[]              accumulates across runs, deduped at campaign scope
-        ├── edge[]                the graph's edges — see below
-        ├── budget                operating + commit (see Cost model)
-        └── outcome               replies, meetings, roster signed, cost per outcome
+        ├── run[]                 kind: discovery | outreach | follow_up | replan
+        ├── target[]              deduped at campaign scope
+        ├── edge[]                the graph's edges
+        ├── budget                operating + commit — never summed
+        └── outcome               rollup
 ```
 
 ### Tables
 
-| Table | Notes |
-|---|---|
-| `workspace` | What we sell, ICP, proof points, sender identities per channel |
-| `campaign` | Root. `status: draft → planned → approved → running ⇄ paused → completed` |
-| `objective` | Raw NL + compiled `CampaignSpec` |
-| `plan` | Versioned per campaign. Motions, capabilities, bindings, cost estimate, policies |
-| `motion_allocation` | `motion_id, operating_budget, commit_budget, dependsOn[]` |
-| `run` | `kind: discovery \| outreach \| follow_up \| re_engagement \| replan` |
-| `target` | **`kind: organization \| person \| segment`** + typed payload + `relationship` |
-| **`edge`** | **`from_target, to_target, kind, evidence_id, confidence`** |
-| `contact` | Person, channel handles, confidence, source |
-| **`signal`** | Proof Graph. **`evidence_kind: documentary \| statistical`** (see below) |
-| `assessment` | `decision, score, rubric_json, evidence_ids[]` |
-| `allocation` | Creator roster selection: chosen set, price, overlap penalty, rationale |
-| `message` | Draft, channel, body, `evidence_ids[]` per sentence, approval status |
-| `interaction` | sent / delivered / opened / replied, with parsed intent |
-| `tool_call` | Ledger: name, args hash, result, `cost_usd`, latency, mode |
-| `policy` / `approval` / `suppression` | Governance |
+`workspace` · `campaign` · `objective` · `plan` · `motion_allocation` · `run` · `target` ·
+`edge` · `contact` · `signal` · `assessment` · `allocation` · `message` · `interaction` ·
+`tool_call` · `policy` · `approval` · `suppression`
 
-### Three target kinds cover every motion
+**Three target kinds** cover every motion:
 
 ```
 organization → business.local, business.online
@@ -102,41 +125,32 @@ person       → creator (relationship: prospect_partner)
 segment      → consumer.ads
 ```
 
-`relationship` matters because creators and customers are both `person` with opposite
-consent rules.
-
-### `signal.evidence_kind` is per-signal, not per-motion
-
-Creator Motion proves this: its rate card and past collabs are documentary, its audience
-overlap and authenticity scores are statistical. Same table, discriminated payload.
+**`signal.evidence_kind` is per-signal, not per-motion** — Creator Motion has both:
 
 | kind | payload |
 |---|---|
-| `documentary` | `source_url, excerpt, start_char, end_char, implication, strength` |
+| `documentary` | `source_ref, excerpt, verified: boolean, implication, strength` |
 | `statistical` | `metric, value, baseline, method, window, implication, strength` |
 
-Documentary signals come from Claude citations, so `excerpt` is byte-exact by construction.
+**`edge`** is what makes it a graph: `from_target, to_target, kind, evidence_id, confidence`.
+Kinds: `mentions · employed_by · competitor_of · same_owner · audience_overlap · customer_of`.
 
-### `edge` is what makes it a graph
+**Two budgets, never summed — and in different currencies.** We operate from Bengaluru:
 
-Without edges this is three flat tables, not an entity graph. Edge kinds:
+| Budget | What | Currency | Magnitude |
+|---|---|---|---|
+| `operating` | inference, data, delivery | **USD** (vendor-billed) | cents to a few dollars |
+| `commit` | creator fees, ad spend | **INR** (paying Indian creators) | ₹thousands to ₹lakhs |
 
-```
-mentions · employed_by · competitor_of · same_owner
-audience_overlap · customer_of · partnered_with
-```
-
-The demo discovers `mentions` edges deterministically (fuzzy-match creator post captions
-against business names in the target set) — no model needed, and it surfaces as a
-**"warm intro path"** badge on the grid. That single badge is the proof that the graph is
-shared rather than three apps in a trench coat.
+Stored as `{ amountMinor, currency }` — integer minor units, never floats. No FX conversion;
+display each natively with Indian digit grouping for INR (₹1,50,000, not ₹150,000). The
+two-currency split was already non-summable; now they aren't even the same unit.
 
 ---
 
 ## Motion registry
 
-A motion is a **declaration**, not a code path. Adding motion #4 is a registry entry plus
-adapters — no new pipeline.
+A motion is a declaration, not a code path.
 
 ```ts
 defineMotion('business.local', {
@@ -152,431 +166,324 @@ defineMotion('business.local', {
 })
 ```
 
-| Motion | Target | Discovery | Evidence | Allocation | Terminal state |
-|---|---|---|---|---|---|
-| `creator` | person | `db.query` creator index | mixed | **yes** | content_published |
-| `business.local` | organization | `geo.query` | documentary | no | meeting_booked |
-| `business.online` | organization | `db.query` company index | documentary | no | meeting_booked |
-| `consumer.ads` | segment | `segment.build` first-party | statistical | budget split | campaign_live |
-| `consumer.email` | person | trigger on customer base | statistical | no | conversion |
+| Motion | Target | Discovery | Allocation | Demo depth |
+|---|---|---|---|---|
+| `creator` | person | `db.query` creator index | **yes** | plan + roster |
+| `business.local` | organization | `geo.query` | no | **full execution** |
+| `business.online` | organization | `db.query` company index | no | registered, not run |
+| `consumer.ads` | segment | `segment.build` | budget split | plan only |
+| `consumer.email` | person | trigger on customer base | no | registered, not run |
 
-Creator and business.online share one discovery *pattern* (`db.query` over a typed index);
-only the schema and filters differ. Local geo-query is the only genuinely distinct one.
-
-Two fields force real branching in the engine: `allocation` (portfolio selection under
-budget) and `contactModel: 'none'` (segment motions skip contact discovery and per-message
-approval entirely). Everything else is data.
+Only two fields force branching in the engine: `allocation` and `contactModel: 'none'`.
 
 ---
 
-## Capability registry + adapters
+## Capability registry
 
-A capability is a Zod contract, not a vendor. Adapters declare which capabilities they
-provide, at what unit cost, in which mode.
+A capability is a Zod contract, not a vendor. Each is exposed to Mastra as a tool via
+`createTool`, so agents select capabilities and the registry resolves the bound adapter.
 
 | Capability | Demo adapter | Mode | Production path |
 |---|---|---|---|
 | `geo.query` | `sim/market` | sim | Outscraper, Google Places |
-| `db.query` | `sim/index` | sim | Apollo, Modash, Clay |
+| `db.query` | `sim/index` | sim | Apollo, Modash |
 | `web.fetch` | `sim/market` | sim | Firecrawl |
-| `reviews.fetch` | `sim/market` | sim | Outscraper reviews, Yelp |
+| `reviews.fetch` | `sim/market` | sim | Outscraper, Yelp |
 | `people.find` | `sim/market` | sim | Apollo, Hunter |
 | `segment.build` | `sim/cohort` | sim | first-party warehouse |
 | `message.send:whatsapp` | `twilio` | **live** | unchanged |
 | `message.send:email` | `resend` | **live** | unchanged |
 | `ads.plan` | `sim/estimator` | plan-only | Google Ads API |
 
-**This table is the go-to-prod answer.** Swap the adapter; the contract and the agent are
-untouched. Say it in the pitch.
+**This table is the go-to-prod answer** — swap the adapter, the contract and the agent are
+untouched.
 
-### The synthetic market
+### The synthetic market — Bengaluru
 
-Generated **once at build time**, committed as JSON — so the demo is instant, deterministic,
-and survives dead hackathon wifi.
+Generated once at build time, committed as JSON. Instant, deterministic, survives dead wifi.
 
-- **Businesses**: name, category, geo, rating, review count, 6–10 reviews mixing praise with
-  specific operational complaints, a website HTML snapshot, 1–3 contacts.
-- **Websites** are templated across quality tiers with defects genuinely present in the
-  markup: missing `<meta viewport>`, `© 2019`, no booking link, inline-styled 2000px hero,
-  phone number only inside an image.
-- **Creators**: handle, platform, followers, engagement rate, view-to-follower ratio,
-  audience geo/age/interest split, fake-follower estimate, content categories, brand-safety
-  flags, past collabs, **rate card by format**, reachability. Seed 2–3 of them with posts
-  mentioning businesses in the target set so the `mentions` edge is real.
+- **60 businesses** across Indiranagar, Koramangala, HSR Layout, Jayanagar, Whitefield and
+  JP Nagar — salons & spas, derma clinics, dental clinics, boutique gyms and yoga studios,
+  pet clinics, speciality cafés. Indian names, `+91` numbers.
+- **Reviews** mix praise with specific operational complaints in the register Indian Google
+  Maps reviews actually use — *"booked on their site, they had no record"*, *"called 4 times,
+  no response"*, *"no online booking, had to DM on Instagram."* That last one is itself a
+  qualifying signal: bookings living in Instagram DMs means the website isn't working.
+- **Websites** templated across quality tiers with defects genuinely in the markup: missing
+  `<meta viewport>`, `© 2019`, no booking link, phone only inside an image.
+- **24 creators** — Bengaluru beauty/wellness/lifestyle on Instagram and YouTube, with
+  **INR rate cards** (nano ₹3–8k, micro ₹15–40k, mid ₹60k–₹1.5L per reel). Seed 2–3 with post
+  captions mentioning businesses in the target set so the `mentions` edge is real.
+
+**WhatsApp is the primary channel, not email.** Indian local SMBs transact on WhatsApp, so
+`business.local.channels` is `['whatsapp', 'email']` in that order and drafts are written as
+WhatsApp messages — short, no subject line, no signature block.
 
 **Hard rule: the generator emits artifacts, never signals.** No `signal` row is ever written
-by the seeder. The agent reads the snapshot and the reviews and derives the finding itself,
-with a citation. Break this rule and the demo is a puppet show.
+by the seeder. Break this and the demo is a puppet show.
 
 ---
 
-## Pipeline
-
-### Stage 0 — Objective → CampaignSpec
-
-One Opus 5 call, strict tool use, streamed. Creates the `campaign` row in `draft`
-immediately, so the work is persisted and shareable before approval.
+## Pipeline (Mastra workflows)
 
 ```
-"We're launching a new hydrafacial device. Get us in front of med spas in
- Phoenix, and line up local beauty creators to promote it.
- $5,000 for partnerships, keep operating spend under $5."
-       ↓
-CampaignSpec { motions[], icp, geo, volume, channels, budget{operating, commit},
-               success_metric }
+campaignWorkflow
+  .then(compileObjectiveStep)        Opus-tier agent → CampaignSpec (structuredOutput)
+  .then(planStep)                    → Plan: motions, bindings, dual budget, policies
+  .then(approvalGate)                suspend() → resume on human approve
+  .parallel([                        motion fan-out, failure isolated per motion
+     businessLocalWorkflow,
+     creatorWorkflow,
+     consumerAdsWorkflow,
+  ])
+  .then(synthesizeStep)              edge discovery, dedup, rollup
+  .commit()
+
+businessLocalWorkflow
+  .then(discoverStep)                one call, not per-target
+  .foreach(targetWorkflow, { concurrency: 8 })
+  .commit()
+
+targetWorkflow                       nested → each target completes independently
+  .then(observeStep)                 snapshot + reviews from fixtures, no model
+  .then(extractEvidenceStep)         agent → signals → deterministic verification
+  .then(assessStep)                  input is ONLY signals, never raw pages
+  .branch([[isFit, contactStep], [notFit, terminalStep]])
+  .then(draftStep)                   per-sentence evidence_id tagging
+  .then(policyGateStep)              deterministic → require_approval
+  .commit()
 ```
 
-Renders as an **editable form** before planning — the compiler framing, and a recovery path
-if the parse is odd on stage.
+**Three model calls per target.** Assessment reasons over evidence, never over raw pages, so
+it cannot smuggle in an unverified claim.
 
-### Stage 1 — CampaignSpec → Plan
-
-One Opus 5 call, fast mode, task budget attached. The model selects from the registry; it
-does not invent capabilities.
-
-```
-Plan {
-  motions: [
-    { id: business.local, targets: 60, operating: $2.10, commit: $0 },
-    { id: creator,        targets: 24, operating: $0.80, commit: $3,500 },
-    { id: consumer.ads,   targets: 1,  operating: $0.30, commit: $1,500 },
-  ],
-  bindings: [...], policies: [...],
-  total: { operating: $3.20, commit: $5,000 }
-}
-```
-
-→ **HUMAN GATE.** Budget split is editable here. Nothing external has been touched.
-
-### Stage 2 — Fan-out
-
-Orchestrator spawns one **motion agent** per motion, running in parallel, each with its own
-SSE channel, drawing from its own budget slice, writing to the shared graph. Failure is
-isolated per motion.
-
-**Agent boundary rule:** agents where reasoning is open-ended (motion planning, roster
-allocation, synthesis, re-planning). Pipelines where work is fixed. Sixty targets is *not*
-sixty agents — it's one motion agent driving a bounded-concurrency pipeline. Total: 3–5
-agents per campaign, not 3 + N.
-
-### Stage 3 — Per-target pipeline (concurrency 8)
-
-| # | Step | Who | Notes |
-|---|---|---|---|
-| 1 | discovery | code | One call per motion, not per target |
-| 2 | observation | code | Snapshot + reviews from fixtures. No model |
-| 3 | **evidence extraction** | Sonnet 5 | Documents with `citations: enabled` → persist citation objects as `signal` |
-| 4 | **assessment** | Sonnet 5 | Input is **only signals**, never raw pages. Strict tool use |
-| 5 | contact discovery | code | Only if `decision === fit` — gates spend on unqualified leads |
-| 6 | **draft** | Sonnet 5 | Per-sentence `evidence_id` tagging |
-| 7 | policy eval | code | Deterministic. Returns `require_approval` |
-
-Three model calls per target. Steps 3 and 4 are split because citations conflict with
-`output_config.format` — but it's better design regardless: **assessment reasons over
-evidence, never over raw pages**, so it cannot smuggle in an uncited claim.
-
-### Stage 3b — Allocation (creator only)
-
-Campaign-level, after scoring. Select a roster under `commit_budget`, penalizing
-`audience_overlap` edges so we don't double-pay for the same eyeballs. Writes `allocation`
-with rationale. This is a **second human gate** — approve the roster and spend split, not
-just individual messages.
-
-### Stage 4 — Synthesis
-
-Cross-motion dedup, edge discovery (`mentions` matching), rollup. Surfaces warm intro paths
-back onto business targets.
-
-### Stage 5 — Approve → send → reply
-
-```
-approve → policy re-eval → message.send (LIVE) → interaction: sent
-                                    ↓
-                     inbound webhook (Twilio / Resend)
-                                    ↓
-             Haiku 4.5 → {intent, sentiment, next_action}
-                                    ↓
-             interaction: replied → SSE → grid: engaged
-```
+**Agent boundary rule:** agents where reasoning is open-ended (objective compilation,
+planning, evidence, drafting, reply classification). Deterministic code everywhere else —
+allocation, edge discovery, policy, budget. Sixty targets is *not* sixty agents.
 
 ### Target state machine
 
 ```
-discovered → observed → scored ─┬→ not_fit          (terminal, stays visible)
+discovered → observed → scored ─┬→ not_fit         (terminal, stays visible)
                                 └→ fit → contact_found → draft_ready
                                           → pending_approval → sent
                                           → delivered → engaged | suppressed
 ```
 
-`not_fit` rows staying on the grid matters — an agent visibly *rejecting* leads with reasons
-is more credible than sixty green rows.
+`not_fit` rows staying visible matters — an agent visibly *rejecting* leads with reasons is
+more credible than sixty green rows.
 
 ---
 
-## Surfaces
+## Repository layout & file ownership
 
-| Screen | Contents | Priority |
-|---|---|---|
-| **Campaign list** | name, motions, status, spend (operating + commit), replies | P1 — 20 min, makes it read as a product not a script |
-| **New campaign** | one-box objective → streamed spec → editable form | P0 |
-| **Plan** | motion cards, capability bindings, cost breakdown, policy list, editable budget split, **Approve** | P0 |
-| **The Grid** | hero. rows streaming through states, motion column + filter chips, live cost ticker, "saved by caching" counter, warm-intro badge | P0 |
-| **Evidence drawer** | Proof Graph per target; click a signal → highlights the exact character span in the source document | P0 |
-| **Roster** | creator allocation: chosen set, price, overlap penalty, rationale, approve | P1 |
-| **Approval queue** | draft with sentences linked to evidence; approve / edit / reject | P0 |
-| **Ledger** | every tool call, cost, latency, mode; replay button | P2 |
+**No two tasks write the same path.** `src/contracts/` is written by T0 and thereafter
+read-only for everyone.
+
+```
+motion-grid/
+├── docker-compose.yml                    T0
+├── drizzle.config.ts                     T0
+├── app/
+│   ├── layout.tsx · page.tsx             T5
+│   ├── campaigns/**                      T5
+│   └── api/
+│       ├── campaigns/**                  T7
+│       ├── stream/**                     T7
+│       └── webhooks/**                   T7
+├── components/**                         T5
+├── src/
+│   ├── contracts/**                      T0  ← read-only for all others
+│   ├── db/
+│   │   ├── schema.ts                     T0  ← read-only for all others
+│   │   └── repositories/**               T1
+│   ├── capabilities/**                   T3
+│   ├── adapters/sim/**                   T2
+│   ├── adapters/live/**                  T7
+│   ├── sim/**                            T2  (generator + fixtures)
+│   ├── motions/**                        T4
+│   ├── policy/** · ledger/**             T3
+│   ├── evidence/**                       T6
+│   ├── synthesis/**                      T8
+│   └── mastra/
+│       ├── index.ts                      T0 stub → T6 owns
+│       ├── agents/** · tools/**          T4
+│       └── workflows/**                  T6
+└── docs/
+    ├── PLAN.md
+    └── tasks/T*.md
+```
 
 ---
 
-## Policy engine
+## Task graph
 
-Deterministic, evaluated before **every** external side effect. Returns
-`allow | deny | require_approval` with a reason that renders in the UI.
+```
+        ┌──────────────── T0 contracts + scaffold (BLOCKING) ────────────────┐
+        │                                                                    │
+   ┌────┴────┬──────────┬──────────┬──────────┬──────────┐                  │
+   T1 db     T2 sim     T3 caps/   T4 agents  T5 UI                          │
+   repos     world      policy     + motions  (mocks)                        │
+   └────┬────┴─────┬────┴─────┬────┴─────┬────┴─────┬────┘                  │
+        │          │          │          │          │                       │
+        └──────────┴────┬─────┴──────────┘          │                       │
+                        │                            │                       │
+              ┌─────────┴─────────┬──────────────┐   │                       │
+              T6 workflows        T7 api+live    T8 seed+synthesis           │
+              + evidence          + webhooks                                 │
+              └─────────┬─────────┴──────┬───────┘                           │
+                        │                │                                    │
+                        └────── T9 wire UI ──────┴── T10 rehearse ────────────┘
+```
 
-| Policy | Applies to |
-|---|---|
-| `operating_budget_cap` | warn 80%, hard-pause 100% |
-| **`external_spend_commit`** | `max_per_deal`, `max_total`, `requires_role` — creator fees and ad spend |
-| `require_approval(send)` | every outbound message |
-| `require_approval(roster)` | creator allocation |
-| `consent_policy` | per-motion: `legitimate_interest` vs `explicit_opt_in` |
-| `suppression_check` | campaign + workspace scope |
-| `rate_limit` | per channel, per run |
+### Wave 0 — blocking · 1 agent · ~1.5h
 
-Qualification is a model call; **policy, budget, suppression and consent are pure code.**
-When a judge asks what stops it emailing someone who opted out, the answer is "a
-deterministic check, not a prompt." That's the plan-and-execute claim.
+**T0 · Scaffold + contracts**
+Next.js App Router, TS strict, Tailwind, Biome, `docker-compose.yml` (Postgres + pgvector),
+Drizzle config, full `src/db/schema.ts`, initial migration, `@mastra/pg` storage wired, a
+Mastra instance stub, and **all of `src/contracts/`**:
 
----
+```
+contracts/enums.ts        motion ids, target kinds, statuses, channels,
+                          evidence kinds, edge kinds, policy decisions
+contracts/entities.ts     drizzle-zod derived, one per table
+contracts/capabilities.ts I/O schema per capability
+contracts/steps.ts        I/O schema per Mastra step
+contracts/api.ts          request/response + SSE event union
+contracts/index.ts        barrel
+```
 
-## Cost model — two budgets, never summed
+*Done when:* `pnpm build` and `pnpm typecheck` pass, `drizzle-kit push` applies against the
+container, and a smoke test imports every schema and parses one fixture of each.
+**Nothing else starts until this is green.**
 
-Mixing inference cost with creator fees in one number is misleading. Track both.
+### Wave 1 — 5 agents parallel · ~4h
 
-- **`operating`** — inference, data, delivery. Cents to a few dollars.
-- **`commit`** — external money committed to third parties. Hundreds to thousands.
-
-| Model | Role | Input $/MTok | Output $/MTok |
+| Task | Owns | Deliverable | Done when |
 |---|---|---|---|
-| `claude-opus-5` | orchestrator, planning, synthesis | $5.00 | $25.00 |
-| `claude-sonnet-5` | motion agents, evidence, allocation, drafting | $3.00 (**$2.00 intro thru 2026-08-31**) | $15.00 (**$10.00 intro**) |
-| `claude-haiku-4-5` | reply classification, tagging | $1.00 | $5.00 |
+| **T1 · Data layer** | `src/db/repositories/**` | One typed repository per aggregate (`campaignRepo`, `targetRepo`, `signalRepo`, `edgeRepo`…). Query + write functions only, no business logic | Unit tests round-trip every entity; no `as` in the diff |
+| **T2 · Sim world** | `src/sim/**`, `src/adapters/sim/**` | `generate.ts` producing committed fixtures (60 businesses, 24 creators, 2–3 seeded `mentions`); all six sim adapters implementing their capability contracts | Every adapter's output parses against its contract; fixtures committed; generator is seed-deterministic |
+| **T3 · Capabilities, policy, ledger** | `src/capabilities/**`, `src/policy/**`, `src/ledger/**` | Registry + adapter binding + resolution; policy engine returning `allow \| deny \| require_approval` with reason; dual-currency cost ledger with shadow costs | Policy decision table is unit-tested exhaustively; ledger arithmetic tested in both currencies |
+| **T4 · Agents & motions** | `src/mastra/agents/**`, `src/mastra/tools/**`, `src/motions/**` | Five `defineMotion` declarations + rubrics; Mastra agents (objective compiler, planner, evidence, drafter, reply classifier) with `structuredOutput` schemas; capabilities wrapped as `createTool` | Each agent callable standalone with a fixture input and returns schema-valid output |
+| **T5 · UI** | `app/**` (non-api), `components/**` | Campaign list, new-campaign, plan screen, **the Grid**, evidence drawer, approval queue — all against contract-shaped mock data | Every screen renders from mocks; no backend dependency; SSE event union consumed from a mock emitter |
 
-Sim adapters carry **shadow costs** matching real vendor rates (`geo.query` @ $0.003/record,
-matching Outscraper's $3/1k) so the plan estimate is what production would actually cost.
-Label these as projected in the UI — do not pass shadow spend off as real spend.
+### Wave 2 — 3 agents parallel · ~4h
 
-**Demo scale: 60 business targets, 24 creators, $5 operating cap.** At ~$0.035/target the
-B2B leg lands near $2.10, so the ticker visibly climbs and the cap is meaningful. Twenty
-targets against a $40 cap would make the ticker decorative.
+| Task | Owns | Deliverable | Done when |
+|---|---|---|---|
+| **T6 · Workflows + evidence** | `src/mastra/workflows/**`, `src/evidence/**`, `src/mastra/index.ts` | `campaignWorkflow`, per-motion workflows, nested `targetWorkflow`; evidence step with **deterministic excerpt verification**; approval gate via `suspend`/`resume` | Full 60-target run completes against sim adapters with zero errors; every persisted signal passes verification |
+| **T7 · API, live delivery, webhooks** | `app/api/**`, `src/adapters/live/**` | Route handlers, SSE stream endpoint, Twilio WhatsApp + Resend adapters behind `message.send`, inbound webhook → reply classifier → `interaction` | One WhatsApp and one email actually deliver; inbound reply writes an `interaction` row |
+| **T8 · Seed, synthesis, demo data** | `src/synthesis/**`, `scripts/**` | Workspace seed, demo campaign preset, deterministic `mentions` edge discovery (fuzzy caption↔business-name match), creator allocation (greedy under `commit_budget` with `audience_overlap` penalty) | `pnpm seed` gives a demo-ready DB; edge discovery finds the seeded mentions; allocation respects budget and excludes over-rate creators with a stated reason |
 
----
+### Wave 3 — 1–2 agents · ~2h
 
-## Advanced Claude capabilities
+**T9 · Wire UI** — replace T5's mocks with real endpoints and the live SSE stream. Owns the
+diff in `app/**` and `components/**`; must not change contracts.
 
-Each is here because it solves a problem MotionGrid actually has. Ordered by
-impact-per-hour; build down and stop when time runs out.
-
-### Tier A — in the build
-
-**1. Citations → the Proof Graph, enforced by the API.** Website snapshot and reviews as
-`document` blocks with `citations: {enabled: true}`. Response carries `cited_text` plus exact
-`start_char_index` / `end_char_index`. Our central promise — every claim traces to a verbatim
-source — becomes **mechanically guaranteed rather than prompt-requested.** The citation
-object *is* the `signal` row.
-
-> Constraint: citations 400 alongside `output_config.format`, hence the 3/4 split. Verify on
-> hour one whether `strict: true` tool use is also affected.
-
-**2. Task budgets** (`output_config.task_budget`, beta `task-budgets-2026-03-13`). Makes the
-agent *aware* of the campaign budget so it paces itself instead of being cut off mid-target.
-Minimum 20k tokens, requires streaming. Pitch line: *"the budget isn't just enforced on the
-agent — the agent knows about it and plans around it."*
-
-**3. Prompt caching, with the savings on screen.** Workspace profile + ICP + rubric are
-identical across all 60 targets. Opus 5's minimum cacheable prefix is **512 tokens**, so even
-a modest rubric caches. Surface `cache_read_input_tokens` as a live "saved by caching"
-figure. A real number beats a claim.
-
-**4. Advisor tool** (`advisor_20260301`). Sonnet 5 motion agents consult an Opus 5 advisor
-mid-turn on genuinely hard qualification calls — server-side, no loop to write. Opus 5 is a
-*redacted* advisor: render it honestly as "escalated to orchestrator," don't fake advice text.
-
-**5. Programmatic tool calling.** One sandboxed script loops over targets calling our
-capability tools and returns only the ranked shortlist — intermediate page content never
-enters the context window. Capture the before/after token count as a slide.
-
-**6. Tool search + `defer_loading`.** The registry is designed to grow to dozens of adapters.
-Mark adapter tools deferred; keep the search tool and one capability non-deferred (all-deferred
-is a 400).
-
-**7. Mid-conversation tool changes** (beta `mid-conversation-tool-changes-2026-07-01`).
-Runtime adapter binding is the core architectural claim; this adds and removes bound
-capabilities mid-conversation **without invalidating the cache.** Composes with #6 for free.
-
-**8. Fast mode** (`speed: "fast"`, Opus 5, $10/$50). Plan compilation is the one moment the
-room watches a model think. Buy 2.5× output speed for those 30 seconds; leave motion agents
-standard. On 429, drop `speed` and continue.
-
-### Tier B — one showcase if Tier A lands by Day 2 midday
-
-**Agent Skills closer** — `container.skills` with `pptx` + `code_execution_20260521`. After
-the reply lands: *"and here's the campaign brief it wrote for your board."* ~20 lines,
-downloads via the Files API. Best effort-to-impact ratio in the whole list; promote it into
-Tier A if rehearsal shows a weak ending.
-
-**Managed Agents multiagent session.** `multiagent: {type: "coordinator", agents: [...]}` is
-an almost literal encoding of our architecture. But CMA owns the event stream, which
-competes with the custom SSE grid that is the hero screen. Stand it up as a *separate narrow
-tab*, never a Day-2 refactor of the main pipeline. The architecture already maps 1:1, so
-"we'd port to Managed Agents" is a credible roadmap slide either way.
-
-### Tier C — roadmap slide, not build
-
-**Memory Stores** (workspace memory across campaigns, versioned, auditable, redactable —
-exactly the product spec's "structured memory") · **Vaults with `environment_variable`
-credentials** (customer Twilio/Gmail/Ads secrets substituted at egress, never visible in the
-sandbox — the answer to "how do you hold our credentials?") · **Scheduled deployments**
-(campaign as cron) · **Batch API** (50% off overnight scoring) · **Context editing +
-compaction** · **Webhooks**.
+**T10 · Rehearse** — seed, run end-to-end three times, then once with wifi off. Fix what
+breaks. Record a screen capture as the ultimate fallback.
 
 ---
 
-## Tech stack
+## Coordination rules for parallel agents
 
-Bun + TypeScript (strict) · Hono (API + SSE + inbound webhooks) · Vite + React + Tailwind ·
-SQLite via `bun:sqlite` + Drizzle · Zod on every capability contract · `@anthropic-ai/sdk`.
-
-Single Bun process serves API and built SPA — one command, one port, nothing to orchestrate
-on stage.
+- **Contracts are frozen after T0.** If a task needs a schema change, it stops and raises it
+  rather than editing `src/contracts/` — a silent contract edit breaks every other agent.
+- **One migration owner.** Only T0 runs `drizzle-kit`. Wave 1+ agents assume the schema
+  exists.
+- **Mocks unblock, they don't ship.** T5 builds against mock data so it never waits on the
+  backend; T9 removes the mocks.
+- **Each task ends with a handoff note** in `docs/tasks/T*.md`: what was built, contract
+  gaps found, anything the next wave must know.
+- Full self-contained briefs get written to `docs/tasks/` before agents are spawned.
 
 ---
 
-## Build plan
+## What Mastra gives us — and what it costs
 
-Blocks 1–5 are the demo. Block 6 is upside. If behind at end of Day 1, cut Creator
-allocation before cutting anything in 1–5.
+**Gives:** typed step I/O (which is our contract discipline, enforced by the framework),
+`.parallel()` for motion fan-out, `.foreach({concurrency})` for the target pipeline, nested
+workflows so each target completes independently, `suspend`/`resume` for the human approval
+gate, built-in memory, and traces/observability for free — the last is a genuine bonus-points
+item, since judges can see the whole agent graph.
 
-### Day 1 AM — spine
-- `bun init`, Hono + Vite + Tailwind, one-command dev script
-- Drizzle schema + migration for every table, including `campaign`, `edge`, `motion_allocation`
-- Capability registry with Zod contracts; adapter interface + registration
-- Motion registry with `defineMotion` for all five motions
-- `sim/generate.ts` — one-time fixture generator (Faker + one LLM pass for reviews and
-  creator bios), committed to `sim/fixtures/*.json`. Seed the creator↔business mentions
+**Costs:** the Anthropic-specific capability list is gone. Citations, task budgets, advisor
+tool, fast mode, mid-conversation tool changes and programmatic tool calling are all
+provider-specific and don't survive the model-router abstraction. Deterministic excerpt
+verification replaces citations; prompt caching may work through `providerOptions` but is
+unverified — treat it as a bonus, not a plan.
 
-### Day 1 PM — the agent
-- Objective Compiler → `CampaignSpec`, campaign row created in `draft`
-- Orchestrator → `Plan` with capability resolution, binding, dual-budget estimate, policies.
-  **Fast mode** (A8) + **task budget** (A2) here
-- Run engine: motion fan-out, per-target pipeline, bounded concurrency, SSE event bus
-- **Evidence extraction via citations (A1)** — do this before writing any "quote verbatim"
-  prompt; the API makes that instruction unnecessary
-- Assessment as a separate strict-tool-use call over signals only
-- **Prompt caching (A3)** — verify `cache_read_input_tokens > 0` on target #2 before moving on
-- Cost ledger + policy engine wired into every adapter call
-
-### Day 2 AM — the show
-- Plan screen: streaming plan, motion cards, dual-budget breakdown, editable split, Approve
-- **The Grid**: streaming rows, motion column, live ticker, caching counter
-- Evidence drawer with character-span highlighting over the source document
-- Approval queue with evidence-linked sentences
-
-### Day 2 PM — real outbound, cross-motion, the close
-- Twilio WhatsApp (sandbox) + Resend email behind `message.send`
-- Inbound webhook → Haiku 4.5 classifier → `interaction` → live grid update
-- Synthesizer: `mentions` edge discovery → warm-intro badge on the grid
-- Creator roster screen (allocation + approve); consumer ad plan card
-- Campaign list screen
-- **Rehearse three times. Then once with wifi off.**
-
-### Block 6 — upside, in priority order
-1. Creator index fixture depth + allocation quality (highest value/hour)
-2. Agent Skills closer (Tier B)
-3. Advisor tool (A4)
-4. Programmatic tool calling (A5)
-5. Tool search + mid-conversation tool changes (A6 → A7, paired)
-6. Replay button — deterministic re-run from the `tool_call` ledger in ~30s. Doubles as a
-   safe second demo run *and* it is the audit story
-7. Follow-up wave (`run.kind: follow_up`) — proves the campaign has state
-8. CMA multiagent tab (Tier B)
+**Verify in hour one (T0):** whether Mastra's model router resolves current Anthropic model
+IDs. Docs show `anthropic/claude-sonnet-4-6` and `anthropic/claude-opus-4-7`. If newer IDs
+don't resolve, either pin to a supported ID or pass an AI SDK provider instance. This is a
+five-minute check that would otherwise surface at hour six.
 
 ---
 
 ## Demo script (4 minutes)
 
 1. **0:00** — "GTM tools got better at writing emails and reply rates fell below 1%. The
-   problem isn't the writing — it's that there's no reason to reply." *(15s)*
-2. **0:15** — Type the objective. Plan streams: **three motions**, budget split into
-   operating vs commit, policy list, approval gate. "It told us what it would cost, in two
-   currencies, before touching anything." *(45s)*
-3. **1:00** — Approve. The Grid fills with mixed-motion rows. Ticker climbs. Talk over it. *(40s)*
-4. **1:40** — Evidence drawer on the best lead. Read the review quote, click it, the exact
-   span highlights in the source. "Not a personalization token — a cited reason to talk. And
-   the citation is enforced by the API, not asked for in a prompt. The model *can't* invent
-   this quote." *(45s)*
-5. **2:25** — Point at the warm-intro badge. "A creator this campaign found has already
-   posted about this business. Two motions, one graph. Three separate tools can't do that." *(25s)*
-6. **2:50** — Approval queue → sentence highlighted to its evidence → approve.
-   **"Check your phone."** *(35s)*
-7. **3:25** — Judge replies. Grid flips to `engaged` live. *(20s)*
-8. **3:45** — "Market data is simulated. The reasoning, the policies, the citations, the
-   messages and that WhatsApp are real. Swapping the sim adapter for Outscraper is one line —
-   the agent doesn't change." *(15s)*
+   problem isn't the writing — it's that there's no reason to reply."
+2. **0:15** — Type the objective. Plan streams: three motions, budget split into operating vs
+   commit, policy list, approval gate.
+3. **1:00** — Approve. The Grid fills with mixed-motion rows. Ticker climbs.
+4. **1:40** — Evidence drawer. "Every excerpt is checked against the source before we store
+   it. Two claims got dropped on this lead — you can see the count."
+5. **2:25** — Warm-intro badge. "A creator this campaign found already posted about this
+   salon. Two motions, one graph. Three separate tools can't do that."
+6. **2:50** — Approval queue → approve. **"Check your phone."**
+7. **3:25** — Judge replies. Grid flips to `engaged` live.
+8. **3:45** — "Market data is simulated. The reasoning, policies, verification, messages and
+   that WhatsApp are real. Swapping the sim adapter for Outscraper is one line."
 
 ---
 
-## Risks — start these in hour one
+## Risks — start in hour one
 
 | Risk | Mitigation |
 |---|---|
-| WhatsApp needs a public webhook URL | `cloudflared tunnel` in hour one, not hour twenty |
-| Twilio sandbox requires each recipient to text a join phrase | Pre-join the demo phone the night before; QR on a backup slide |
-| WhatsApp business approval is multi-day | Use the **Twilio sandbox**, not Meta Cloud API. **Telegram bot is the 10-minute fallback** |
-| Resend on a bare domain only sends to your own address | That's exactly the demo case. Don't attempt domain verification |
-| Google Ads needs an approved developer token | Out of scope for execution. `consumer.ads` *plans* only; say so plainly |
-| Betas are gated per-account | Smoke-test each header hour one with a one-line curl: task budgets, advisor, fast mode, mid-conv tool changes. **No beta may be load-bearing** |
-| Fast mode has its own rate limit | On 429, drop `speed` and retry standard |
-| Hackathon wifi | Fixtures are local; only Anthropic + Twilio/Resend need network. Record a full successful run as the ultimate fallback |
+| Mastra model router may not resolve current Anthropic IDs | Five-minute check in T0; pin or pass a provider instance |
+| Postgres container + Drizzle + Mastra storage is more setup than SQLite | T0 is explicitly blocking and budgeted 1.5h; nobody starts until it's green |
+| WhatsApp needs a public webhook URL | `cloudflared tunnel` in hour one |
+| Twilio sandbox needs each recipient to text a join phrase | Pre-join the demo phone the night before; **Telegram bot is the 10-minute fallback** |
+| **SMS to Indian numbers needs DLT registration** with a telecom operator — days of lead time | **Don't build SMS.** WhatsApp via the Twilio sandbox sidesteps it entirely, and is the channel Indian SMBs actually use |
+| Resend on a bare domain only sends to your own address | Exactly the demo case — don't attempt domain verification |
+| Parallel agents drifting on contracts | Contracts frozen after T0; changes escalate, never edited silently |
+| Next.js HMR creating duplicate `PostgresStore` instances | Store the instance on `globalThis`, per Mastra's documented guidance |
+| Hackathon wifi | Fixtures are local; only Anthropic + Twilio/Resend need network. Record a full run |
 
 ---
 
 ## Verification
 
-- `bun test` — capability contract round-trips (Zod parse of every adapter I/O), motion
-  registry validation, policy decision table, cost ledger arithmetic (both currencies).
-- **Citation integrity**: for every documentary `signal`,
-  `source.slice(start_char, end_char) === excerpt`. This is the test that proves the Proof
-  Graph. If it fails, the evidence story is decoration.
-- **Caching**: `cache_read_input_tokens > 0` from target #2 onward.
-- **Offline run**: network disabled to sim adapters; a full 60-target campaign reaches
+- `pnpm typecheck` clean with **zero `as` casts and zero `any`** across the repo — grep the
+  diff; a cast means a contract is wrong.
+- `pnpm test` — capability contract round-trips, motion registry validation, policy decision
+  table, dual-currency ledger arithmetic, repository round-trips.
+- **Evidence verification**: every persisted documentary signal satisfies
+  `normalize(source).includes(normalize(excerpt))`; the assessment records `droppedCount`.
+- **Offline run**: network disabled to sim adapters; a 60-target campaign reaches
   `draft_ready` with zero errors.
-- **Determinism**: same objective, same seed, twice — identical target set and identical
-  citation offsets. Divergence means the sim is leaking randomness and the second demo run
-  will embarrass you.
-- **Budget enforcement**: operating cap $0.50 → run pauses and surfaces the policy reason.
-  `external_spend_commit` with `max_per_deal` below a creator's rate → that creator is
-  excluded from the roster with a stated reason.
-- **Beta degradation**: full campaign with every beta header removed. Must complete —
-  slower and dumber, but green.
+- **Determinism**: same objective and seed, twice → identical target set and identical
+  signals. Divergence means the sim leaks randomness and the second demo run embarrasses you.
+- **Budget**: operating cap $0.50 → run pauses with the policy reason surfaced.
+  `external_spend_commit` below a creator's rate → excluded from roster with a stated reason.
 - **Live send**: one WhatsApp and one email land; the reply webhook writes an `interaction`
-  and the grid changes without a refresh.
+  and the grid updates without a refresh.
 
 ---
 
 ## Future scope
 
-**Near** — real discovery adapters (Outscraper, Apollo, Modash, Firecrawl); CRM write-back;
-deliverability and warmup; multi-workspace tenancy and auth; `business.online` execution.
+**Near** — real discovery adapters (Outscraper, Apollo, Modash, Firecrawl); `business.online`
+and `consumer.email` execution; CRM write-back; auth and multi-tenancy; follow-up waves.
 
-**Mid** — Creator Motion past outreach: brief → contract → promo code issuance → content
-approval → attribution → payment (needs a `collaboration` entity B2B doesn't have).
-Consumer Motion execution against Meta/Google. Dynamic budget rebalancing across motions
-based on live conversion. Motion DAG execution (`dependsOn`) so creator content is live
-before ads amplify it.
+**Mid** — Creator Motion past outreach: brief → contract → promo code → content approval →
+attribution → payment (needs a `collaboration` entity B2B doesn't have). Consumer execution
+against Meta/Google. Dynamic budget rebalancing across motions. Motion DAG (`dependsOn`) so
+creator content is live before ads amplify it.
 
-**Long** — outcome learning. `interaction` feeds back into scoring so the orchestrator plans
-from what actually converted rather than a static rubric, and edges accumulate into a
-proprietary graph that gets better with every campaign. That is the compounding moat, and
-it is the reason the shared entity graph and the campaign root exist from day one rather
-than being retrofitted.
+**Long** — outcome learning: `interaction` feeds back into scoring so the orchestrator plans
+from what converted rather than a static rubric, and edges accumulate into a proprietary
+graph that improves every campaign. That is the compounding moat, and it is why the shared
+graph and the campaign root exist from day one.
