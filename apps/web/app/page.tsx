@@ -96,7 +96,7 @@ export default function Home() {
         <div className="trust-line"><span>★★★★★</span> Plan, approve, execute, and learn in one place</div>
 
         <div className="product-stage" id="workbench">
-          <div className="stage-tabs" role="group" aria-label="Product capabilities">
+          <nav className="stage-tabs" aria-label="Product capabilities">
             <span className="tab-arrow" aria-hidden="true">←</span>
             <span className="active"><Compass size={17} /> Discovery</span>
             <span><UserRoundSearch size={17} /> Qualification</span>
@@ -105,7 +105,7 @@ export default function Home() {
             <span><BarChart3 size={17} /> Reporting</span>
             <span><Sparkles size={17} /> AI</span>
             <span className="tab-arrow" aria-hidden="true">→</span>
-          </div>
+          </nav>
 
           <div className="desk-doodle desk-doodle--left" aria-hidden="true">
             <span className="doodle-star">✦</span><span className="doodle-pot">⌇</span><span className="doodle-leaf">⌁</span>
