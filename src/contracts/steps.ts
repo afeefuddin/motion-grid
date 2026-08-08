@@ -185,10 +185,11 @@ export const CreatorShortlistDataSchema = z.object({
         reason: z.string().min(1),
       }),
     )
-    .min(1)
     .max(10),
 });
-export const CreatorShortlistOutputSchema = StepResult(CreatorShortlistDataSchema);
+export const CreatorShortlistOutputSchema = StepResult(
+  CreatorShortlistDataSchema,
+);
 
 export const DiscoverInputSchema = z.object({
   campaignId: IdSchema,

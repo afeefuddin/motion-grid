@@ -2,14 +2,17 @@ import type { z } from "zod";
 import { capabilityRegistry } from "../../capabilities";
 import type { Adapter } from "../../capabilities/adapter";
 import type { TargetCandidateSchema } from "../../contracts/capabilities";
-import { CreatorShortlistDataSchema } from "../../contracts/steps";
+import type { CreatorShortlistDataSchema } from "../../contracts/steps";
+import { runCreatorSelector } from "../agents/creator-selector";
 import type { StructuredAgent } from "../agents/runner";
 import type { OrganizationInput, OrganizationRuntime } from "./organization";
 import { executePlannedCapability } from "./replan";
-import { runCreatorSelector } from "../agents/creator-selector";
 
 type TargetCandidate = z.output<typeof TargetCandidateSchema>;
-type CreatorSelection = z.output<typeof CreatorShortlistDataSchema>["selected"][number];
+type CreatorCandidate = Extract<TargetCandidate, { readonly kind: "person" }>;
+type CreatorSelection = z.output<
+  typeof CreatorShortlistDataSchema
+>["selected"][number];
 
 function creatorCandidates(candidates: readonly TargetCandidate[]) {
   return candidates.flatMap((candidate) =>
@@ -25,7 +28,23 @@ function creatorCandidates(candidates: readonly TargetCandidate[]) {
   );
 }
 
-/** Selects up to ten candidate creators and refuses model references outside the supplied list. */
+function withSelection(
+  candidate: Omit<CreatorCandidate, "kind">,
+  choice: CreatorSelection,
+) {
+  return {
+    ...candidate,
+    payload: {
+      ...candidate.payload,
+      selection: {
+        relevanceScore: choice.relevanceScore,
+        reason: choice.reason,
+      },
+    },
+  };
+}
+
+/** Selects up to ten creators and rejects references outside the supplied pool. */
 export async function shortlistCreators(
   input: OrganizationInput,
   candidates: readonly TargetCandidate[],
@@ -33,54 +52,47 @@ export async function shortlistCreators(
 ) {
   const people = creatorCandidates(candidates);
   if (people.length === 0) {
-    return { ok: false as const, reason: "Creator discovery returned no people." };
+    return {
+      ok: false as const,
+      reason: "Creator discovery returned no people.",
+    };
   }
 
   const result = await runCreatorSelector(
     { spec: input.spec, candidates: people },
     selector,
   );
-  const available = new Map(people.map((candidate) => [candidate.externalRef, candidate]));
-  const selected = new Map<string, CreatorSelection>();
+  if (!result.ok) {
+    return result;
+  }
+  const available = new Map(
+    people.map((candidate) => [candidate.externalRef, candidate]),
+  );
+  const seen = new Set<string>();
+  const selected = [];
+
   for (const choice of result.data.selected) {
-    if (!available.has(choice.externalRef)) {
+    const candidate = available.get(choice.externalRef);
+    if (candidate === undefined) {
       return {
         ok: false as const,
         reason: `Creator selector returned an unknown candidate: ${choice.externalRef}.`,
       };
     }
-    if (selected.has(choice.externalRef)) {
+    if (seen.has(choice.externalRef)) {
       return {
         ok: false as const,
         reason: `Creator selector returned ${choice.externalRef} more than once.`,
       };
     }
-    selected.set(choice.externalRef, choice);
+    seen.add(choice.externalRef);
+    selected.push(withSelection(candidate, choice));
   }
 
-  return {
-    ok: true as const,
-    candidates: people.flatMap((candidate) => {
-      const choice = selected.get(candidate.externalRef);
-      return choice === undefined
-        ? []
-        : [
-            {
-              ...candidate,
-              payload: {
-                ...candidate.payload,
-                selection: {
-                  relevanceScore: choice.relevanceScore,
-                  reason: choice.reason,
-                },
-              },
-            },
-          ];
-    }),
-  };
+  return { ok: true as const, candidates: selected };
 }
 
-/** Discovers creators once, asks the selector to rank the whole pool, and persists its top ten. */
+/** Fetches the supported creator pool, ranks it with Claude, and attaches only the top ten. */
 export async function runCreatorMotion(
   input: OrganizationInput,
   runtime: OrganizationRuntime,
@@ -96,7 +108,7 @@ export async function runCreatorMotion(
     input: {
       entityKind: "creator",
       filters: {},
-      limit: 60,
+      limit: 100,
     },
     plan: input.plan,
     adapters,
@@ -113,7 +125,7 @@ export async function runCreatorMotion(
   }
 
   const shortlisted = await shortlistCreators(
-    input,
+    { ...input, plan: discovered.plan },
     discovered.data.targets,
     runtime.agents.selectCreators,
   );
@@ -126,12 +138,20 @@ export async function runCreatorMotion(
       ...candidate,
       campaignId: input.campaignId,
       motionId: "creator",
+      kind: "person",
       relationship: "prospect_partner",
     })),
   );
   await Promise.all(
     targets.map((target) => runtime.store.updateTarget(target.id, "fit")),
   );
-  targets.forEach((target) => runtime.replans.completeTarget(target.id));
-  return { ok: true, targetIds: targets.map((target) => target.id), failures: [] };
+  targets.forEach((target) => {
+    runtime.replans.completeTarget(target.id);
+  });
+
+  return {
+    ok: true,
+    targetIds: targets.map((target) => target.id),
+    failures: [],
+  };
 }

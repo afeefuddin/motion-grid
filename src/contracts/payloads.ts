@@ -25,6 +25,7 @@ export const CreatorProfileSnapshotSchema = z.object({
   engagementRate: ConfidenceSchema,
   viewToFollowerRatio: z.number().nonnegative(),
   fakeFollowerEstimate: ConfidenceSchema,
+  brandSafetyFlags: z.array(z.string().min(1)).default([]),
 });
 
 export const PersonTargetPayloadSchema = z.object({
@@ -33,19 +34,13 @@ export const PersonTargetPayloadSchema = z.object({
   followerCount: z.int().nonnegative(),
   rateCardCommitCents: NonnegativeCentsSchema.nullable(),
   profile: CreatorProfileSnapshotSchema.optional(),
-  contentTags: z.array(z.string().min(1)).default([]),
-  audienceGeographies: z.array(z.string().min(1)).default([]),
-  audienceInterests: z.array(z.string().min(1)).default([]),
-  engagementRate: ConfidenceSchema.nullable().default(null),
-  fakeFollowerEstimate: ConfidenceSchema.nullable().default(null),
-  brandSafetyFlags: z.array(z.string().min(1)).default([]),
   selection: z
     .object({
       relevanceScore: ConfidenceSchema,
       reason: z.string().min(1),
     })
     .nullable()
-    .default(null),
+    .optional(),
 });
 
 export const SegmentTargetPayloadSchema = z.object({

@@ -16,8 +16,8 @@ export const creatorSelector = new Agent({
     "Selects the most relevant creators for a campaign from a supplied candidate list.",
   model: midAgentModel,
   instructions: `Select the creators most relevant to the supplied campaign specification.
-Use only the supplied candidate list. Prioritize content tags, audience geography, and audience interests that match the campaign's goal and target criteria. Then consider engagement quality, follower reach, commercial fit, brand-safety flags, and fake-follower estimate.
-Return up to ten candidates, ordered from strongest to weakest. When at least ten candidates are relevant, return exactly ten. Every selected externalRef must come from the supplied list and every reason must name the matching tags or audience attributes. Return only the structured result.`,
+Use only the supplied candidate list. A creator's profile.contentCategories are its content tags. Prioritize those tags, profile.audienceGeography, and profile.audienceInterests when matching the campaign goal and target criteria. Then consider engagement quality, follower reach, commercial fit, profile.brandSafetyFlags, and fake-follower estimate.
+Return the ten strongest relevant candidates in strongest-to-weakest order, or every relevant candidate when fewer than ten qualify. Return an empty list when none qualify. Every selected externalRef must come from the supplied list and every reason must name the matching tags or audience attributes. Return only the structured result.`,
   defaultOptions: {
     maxSteps: 1,
     structuredOutput: { schema: CreatorShortlistDataSchema },
@@ -26,8 +26,9 @@ Return up to ten candidates, ordered from strongest to weakest. When at least te
 
 export async function runCreatorSelector(
   input: unknown,
-  agent: StructuredAgent<z.output<typeof CreatorShortlistDataSchema>> =
-    creatorSelector,
+  agent: StructuredAgent<
+    z.output<typeof CreatorShortlistDataSchema>
+  > = creatorSelector,
 ) {
   const parsed = CreatorShortlistInputSchema.parse(input);
   const result = await agent.generate(

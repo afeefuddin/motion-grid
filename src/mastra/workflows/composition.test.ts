@@ -149,6 +149,11 @@ test("selected motions run without plan approval and synthesis tolerates skipped
               throw new Error("unused");
             },
           },
+          selectCreators: {
+            async generate() {
+              throw new Error("unused");
+            },
+          },
         },
         adapters: { geo: [emptyGeo], db: [], web: [], reviews: [], people: [] },
         ledger: { async record() {} },

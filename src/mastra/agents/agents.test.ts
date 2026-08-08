@@ -5,12 +5,14 @@ import {
   AssessDataSchema,
   CampaignSpecSchema,
   ClassifyReplyDataSchema,
+  CreatorShortlistDataSchema,
   DraftDataSchema,
   DualBudgetSchema,
   ExtractEvidenceDataSchema,
   PlanDataSchema,
 } from "../../contracts/steps";
 import { assessor, runAssessor } from "./assessor";
+import { creatorSelector } from "./creator-selector";
 import { drafter, runDrafter } from "./drafter";
 import { evidenceExtractor, runEvidenceExtractor } from "./evidence-extractor";
 import { heavyAgentModel, lightAgentModel, midAgentModel } from "./models";
@@ -39,6 +41,7 @@ test("agents use the verified model tiers", () => {
   assert.equal(planner.model, heavyAgentModel);
   assert.equal(evidenceExtractor.model, midAgentModel);
   assert.equal(assessor.model, midAgentModel);
+  assert.equal(creatorSelector.model, midAgentModel);
   assert.equal(drafter.model, midAgentModel);
   assert.equal(replyClassifier.model, lightAgentModel);
 });
@@ -48,6 +51,7 @@ test("each agent owns its frozen structured-output schema", async () => {
   const plannerOptions = await planner.getDefaultOptions();
   const evidenceOptions = await evidenceExtractor.getDefaultOptions();
   const assessorOptions = await assessor.getDefaultOptions();
+  const creatorSelectorOptions = await creatorSelector.getDefaultOptions();
   const drafterOptions = await drafter.getDefaultOptions();
   const replyOptions = await replyClassifier.getDefaultOptions();
 
@@ -58,6 +62,10 @@ test("each agent owns its frozen structured-output schema", async () => {
     ExtractEvidenceDataSchema,
   );
   assert.equal(assessorOptions.structuredOutput.schema, AssessDataSchema);
+  assert.equal(
+    creatorSelectorOptions.structuredOutput.schema,
+    CreatorShortlistDataSchema,
+  );
   assert.equal(drafterOptions.structuredOutput.schema, DraftDataSchema);
   assert.equal(replyOptions.structuredOutput.schema, ClassifyReplyDataSchema);
 });
